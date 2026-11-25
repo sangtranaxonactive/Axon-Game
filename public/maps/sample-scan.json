@@ -1,0 +1,12 @@
+{
+  "name": "Sample scan (GLB pipeline demo)",
+  "theme": "none",
+  "width": 9,
+  "points": [[-52, -38], [0, -41], [52, -38], [57, 0], [50, 38], [26, 40], [15, 16], [0, 7], [-15, 16], [-26, 40], [-50, 38], [-57, 0]],
+  "boostPads": [0.1, 0.55],
+  "barriers": true,
+  "road": { "visible": true, "color": "#2f3340", "opacity": 0.8 },
+  "model": { "url": "/maps/sample-scan.glb", "scale": 10, "rotationY": 0, "position": [0, 0, 0] },
+  "sky": { "top": "#8ec5ff", "bottom": "#eef4fb" },
+  "sun": { "azimuth": 150, "elevation": 55, "color": "#fff4e0", "intensity": 2.2 }
+}

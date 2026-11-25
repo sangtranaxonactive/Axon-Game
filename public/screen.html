@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YEP Racing — Big Screen</title>
+<style>
+  @font-face { font-family: "Barlow Condensed"; font-weight: 700; font-style: normal; src: url(/vendor/font/barlow-condensed-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Barlow Condensed"; font-weight: 800; font-style: italic; src: url(/vendor/font/barlow-condensed-latin-800-italic.woff2) format("woff2"); }
+  * { box-sizing: border-box; }
+  h1, h2, .stat, .n, .tm, #record, #url, .prize { font-family: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradient(120% 90% at 50% 0%, #0b3a70 0%, #03101f 62%); color: #e9f6ff;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
+  #wrap { height: 100vh; display: grid; grid-template-columns: 1.15fr 1.5fr 1.05fr; grid-template-rows: auto 1fr; gap: 1.6vh 1.4vw; padding: 2.2vh 1.8vw; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 2vw; }
+  h1 { margin: 0; font-size: 8vh; font-weight: 800; font-style: italic; letter-spacing: .01em; line-height: .95; text-transform: uppercase; color: #fff; text-shadow: 0 .4vh 0 #0057b8, 0 1vh 4vh rgba(10,132,224,.8); }
+  .prize { font-size: 3vh; letter-spacing: .05em; color: #7fe3ff; font-weight: 700; margin-top: .6vh; }
+  .stats { display: flex; gap: 1.2vw; }
+  .stat { background: rgba(10,60,110,.45); border: 1px solid rgba(140,200,255,.2); border-radius: 1.6vh; padding: 1vh 1.4vw; text-align: center; min-width: 8vw; }
+  .stat b { display: block; font-size: 4.2vh; line-height: 1; } .stat span { font-size: 1.5vh; letter-spacing: .14em; color: #9fa9c6; text-transform: uppercase; }
+  .card { background: linear-gradient(180deg, rgba(10,44,84,.7), rgba(4,22,44,.8)); border: 1px solid rgba(140,200,255,.18); border-radius: 2.2vh; padding: 1.6vh 1.2vw; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  h2 { margin: 0 0 1.2vh; font-size: 2.6vh; letter-spacing: .2em; color: #35c8f5; font-weight: 800; text-transform: uppercase; }
+  ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .7vh; flex: 1; min-height: 0; }
+  li { display: flex; align-items: center; gap: .8vw; padding: 0 1vw; border-radius: 1.2vh; background: rgba(120,190,255,.08); flex: 1 1 0; min-height: 0; max-height: 7.2vh; font-size: 2.8vh; transition: background .6s; }
+  li.flash { background: rgba(53, 200, 245, .5); }
+  li .n { width: 2.4vw; font-weight: 900; font-style: italic; color: #9fa9c6; flex: none; text-align: center; }
+  li:nth-child(1) .n { color: #ffd166; font-size: 1.25em; } li:nth-child(2) .n { color: #d5dbe8; } li:nth-child(3) .n { color: #e59a5c; }
+  li:nth-child(1) { background: linear-gradient(90deg, rgba(10,132,224,.65), rgba(120,190,255,.08)); box-shadow: inset .4vw 0 0 #ffd166; max-height: 9vh; font-size: 3.4vh; }
+  li i { width: 1.7vh; height: 1.7vh; border-radius: .4vh; transform: skewX(-12deg); flex: none; }
+  li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  li .tm { font-weight: 700; font-size: 1.15em; letter-spacing: .03em; } li .sm { color: #9fa9c6; font-size: .62em; font-weight: 500; }
+  .empty { color: #9fa9c6; font-size: 2.4vh; margin: auto; text-align: center; }
+  #left { display: flex; flex-direction: column; gap: 1.6vh; min-height: 0; }
+  #join { align-items: center; text-align: center; flex: none; }
+  #qr { width: 26vh; height: 26vh; background: #fff; border-radius: 1.6vh; padding: 1vh; }
+  #url { font-size: 2.5vh; font-weight: 800; margin-top: 1vh; word-break: break-all; }
+  .scan { font-size: 2vh; color: #9fa9c6; margin-top: .4vh; }
+  #mapCard { flex: 1; } #map { width: 100%; flex: 1; min-height: 0; }
+  #right { display: flex; flex-direction: column; gap: 1.6vh; min-height: 0; } #right .card { flex: 1; }
+  #feed li { font-size: 2.2vh; max-height: 5.2vh; }
+  #record { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(8,10,22,.82); opacity: 0; pointer-events: none; transition: opacity .4s; z-index: 5; text-align: center; }
+  #record.on { opacity: 1; }
+  #record .t { font-size: 5vh; letter-spacing: .3em; color: #7fe3ff; font-weight: 800; }
+  #record .who { font-size: 13vh; font-weight: 900; line-height: 1.05; margin: 1vh 0; }
+  #record .time { font-size: 12vh; font-weight: 800; font-style: italic; color: #35c8f5; text-shadow: 0 0 6vh rgba(53,200,245,.8); }
+  #off { position: fixed; right: 1vw; bottom: 1vh; font-size: 1.6vh; color: #ff7a7a; display: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <div><h1 id="title">YEP RACING</h1><div class="prize" id="prize"></div></div>
+    <div class="stats">
+      <div class="stat"><b id="sOnline">0</b><span>online</span></div>
+      <div class="stat"><b id="sRacing">0</b><span>racing now</span></div>
+      <div class="stat"><b id="sTotal">0</b><span>finishers</span></div>
+    </div>
+  </header>
+  <div id="left">
+    <div class="card" id="join"><h2>Join the race</h2><img id="qr" alt="QR code"><div id="url"></div><div class="scan">Scan with your phone camera</div></div>
+    <div class="card" id="mapCard"><h2>Live track</h2><canvas id="map"></canvas></div>
+  </div>
+  <div class="card"><h2>🏆 Fastest racers</h2><ol id="top"></ol></div>
+  <div id="right">
+    <div class="card"><h2>Team ranking <span id="teamRule" style="letter-spacing:0;text-transform:none;font-weight:500"></span></h2><ol id="teams"></ol></div>
+    <div class="card"><h2>Just finished</h2><ol id="feed"></ol></div>
+  </div>
+</div>
+<div id="record"><div><div class="t">NEW RECORD</div><div class="who" id="rWho"></div><div class="time" id="rTime"></div></div></div>
+<div id="off">reconnecting…</div>
+<script type="module" src="/dist/screen.js"></script>
+</body>
+</html>

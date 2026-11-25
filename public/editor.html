@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YEP Racing — Track Editor</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10131f; color: #e8ebf5; font: 13px system-ui, sans-serif; }
+  #gl { position: fixed; inset: 0 320px 0 0; width: calc(100% - 320px); height: 100%; display: block; cursor: crosshair; }
+  #side { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; padding: 14px; overflow-y: auto; background: #171b2c; border-left: 1px solid #2a3050; }
+  h1 { font-size: 16px; margin: 0 0 8px; } h2 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #8f98b3; margin: 16px 0 6px; }
+  label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 5px 0; }
+  input[type=number], input[type=text] { width: 120px; padding: 5px 7px; background: #0f1220; border: 1px solid #2f3660; color: #fff; border-radius: 6px; }
+  button { padding: 7px 10px; border-radius: 7px; border: 1px solid #39407a; background: #252b4d; color: #fff; cursor: pointer; margin: 2px 2px 2px 0; }
+  button.p { background: #ff7a1a; border-color: #ff7a1a; font-weight: 700; }
+  #info { white-space: pre-line; background: #0f1220; border-radius: 8px; padding: 8px 10px; line-height: 1.5; }
+  .bad { color: #ff6b6b; font-weight: 700; } .ok { color: #4ade80; }
+  p { color: #9aa3c0; line-height: 1.45; margin: 6px 0; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="side">
+  <h1>Track Editor</h1>
+  <p><b>Click</b> empty floor = add point after the selected one · <b>drag</b> a point = move · <b>right-drag</b> = pan · <b>wheel</b> = zoom · <b>Delete</b> = remove selected point. The track is a closed loop driven in point order (point 1 = start line).</p>
+  <h2>1 · Company model (GLB)</h2>
+  <input type="file" id="file" accept=".glb,.gltf">
+  <label>File name in /maps/ <input type="text" id="mUrl" placeholder="office-scan.glb"></label>
+  <label>Scale (10 = tiny racers) <input type="number" id="mScale" value="10" step="0.5"></label>
+  <label>Rotate Y (deg) <input type="number" id="mRot" value="0" step="5"></label>
+  <label>Move X <input type="number" id="mX" value="0" step="1"></label>
+  <label>Floor height Y <input type="number" id="mY" value="0" step="0.1"></label>
+  <label>Move Z <input type="number" id="mZ" value="0" step="1"></label>
+  <button id="btnFloor">Auto-place floor at Y = 0</button>
+  <h2>2 · Track</h2>
+  <label>Road width <input type="number" id="width" value="15" step="0.5" min="6"></label>
+  <label>Show road surface <input type="checkbox" id="roadVis" checked></label>
+  <label>Road opacity <input type="number" id="roadOp" value="0.85" step="0.05" min="0.1" max="1"></label>
+  <label>Barriers <input type="checkbox" id="barriers" checked></label>
+  <button id="btnRev">Reverse direction</button><button id="btnClear">Clear points</button>
+  <div id="info"></div>
+  <h2>3 · Save</h2>
+  <label>Map name <input type="text" id="name" value="company"></label>
+  <button class="p" id="btnExport">Download map JSON</button>
+  <button id="btnLoad">Load existing map by name</button>
+  <p>Put <code>&lt;name&gt;.json</code> and the GLB into <code>public/maps/</code>, set <code>"map": "&lt;name&gt;"</code> in <code>config.json</code>, then restart the server (or start it with <code>MAP=&lt;name&gt; npm start</code> to try a map without editing the config).</p>
+</div>
+<script type="module" src="/dist/editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# Render blueprint: New > Blueprint > pick this repo. One instance only (room state lives in memory).
+services:
+  - type: web
+    name: yep-racing
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/stats
+    envVars:
+      - key: ADMIN_KEY
+        generateValue: true
+    disk:
+      name: leaderboard
+      mountPath: /data
+      sizeGB: 1

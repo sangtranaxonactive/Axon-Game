@@ -1,0 +1,23 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const s = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+  s.on('pageerror', e => console.log('SCREEN PAGEERR', e.message));
+  await s.goto('http://localhost:3000/screen'); await s.waitForTimeout(4000);
+  await s.screenshot({ path: 'shots/screen.png' });
+  const e = await b.newPage({ viewport: { width: 1400, height: 800 } });
+  e.on('pageerror', x => console.log('EDITOR PAGEERR', x.message));
+  await e.goto('http://localhost:3000/editor?map=office'); await e.waitForTimeout(5000);
+  await e.screenshot({ path: 'shots/editor.png' });
+  const p = await b.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  p.on('pageerror', x => console.log('GAME PAGEERR', x.message));
+  await p.goto('http://localhost:3000/'); await p.waitForSelector('#sProfile:not(.hidden)', { timeout: 60000 });
+  await p.screenshot({ path: 'shots/port-1-profile.png' });
+  await p.fill('#inName', 'Nhi Portrait'); await p.click('#teamPick button:nth-child(2)'); await p.click('#btnEnter');
+  await p.click('#btnQuick'); await p.waitForFunction(() => window.__game.race, null, { timeout: 30000 });
+  await p.waitForTimeout(8000);
+  await p.evaluate(() => { const g = window.__game; setInterval(() => { const r = g.race; if (!r) return; const c = r.car, t = g.track, s = t.samples[(c.idx + 9) % t.N]; let d = Math.atan2(s.x - c.x, s.z - c.z) - c.h; d = Math.atan2(Math.sin(d), Math.cos(d)); g.inp.left = d > 0.05; g.inp.right = d < -0.05; g.inp.drift = Math.abs(d) > 0.3; }, 30); });
+  await p.waitForTimeout(9000);
+  await p.screenshot({ path: 'shots/port-2-race.png' });
+  await b.close();
+})();

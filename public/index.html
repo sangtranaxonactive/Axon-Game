@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#03101f">
+<title>YEP Racing</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2306203f%22/%3E%3Cpath d=%22M40 6 14 37h13l-6 25 29-33H36z%22 fill=%22%2335c8f5%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/css/game.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-bolt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e9fbff"/><stop offset=".35" stop-color="#35c8f5"/><stop offset=".7" stop-color="#0a84e0"/><stop offset="1" stop-color="#0041a8"/></linearGradient>
+    <linearGradient id="g-bolt-side" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#06306e"/><stop offset="1" stop-color="#021a40"/></linearGradient>
+    <linearGradient id="g-ocean" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fe3ff"/><stop offset="1" stop-color="#0a84e0"/></linearGradient>
+    <symbol id="i-bolt" viewBox="0 0 64 64">
+      <path d="M40 6 14 37h13l-6 25 29-33H36z" fill="url(#g-bolt-side)" transform="translate(3 3)"/>
+      <path d="M40 6 14 37h13l-6 25 29-33H36z" fill="url(#g-bolt)" stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M38 10 20 33h9" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-left" viewBox="0 0 64 64"><path d="M40 10 16 32l24 22v-13h10V23H40z" fill="url(#g-ocean)" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-drift" viewBox="0 0 64 64">
+      <path d="M8 50c10-2 18-8 22-20M20 56c12-3 22-10 27-24" fill="none" stroke="#9fdcff" stroke-width="4" stroke-linecap="round" stroke-dasharray="7 6"/>
+      <g transform="rotate(-28 42 22)"><rect x="30" y="8" width="24" height="28" rx="8" fill="#0b1830" stroke="#fff" stroke-width="3"/><path d="M36 12v20M42 10v24M48 12v20" stroke="#35c8f5" stroke-width="2.5"/></g>
+    </symbol>
+    <symbol id="i-brake" viewBox="0 0 64 64"><circle cx="32" cy="32" r="21" fill="none" stroke="#ffb3ba" stroke-width="5"/><circle cx="32" cy="32" r="8" fill="#ff5a6a"/><path d="M6 20a30 30 0 0 0 0 24M58 20a30 30 0 0 1 0 24" fill="none" stroke="#ff5a6a" stroke-width="4" stroke-linecap="round"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 64 64"><path d="M12 6v54" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M14 9h40l-8 13 8 13H14z" fill="#fff"/><path d="M14 9h10v9H14zM34 9h10v9H34zM24 18h10v8H24zM44 18h4l-2 4 2 4h-4zM14 26h10v9H14zM34 26h10v9H34z" fill="#06203f"/></symbol>
+    <symbol id="i-cup" viewBox="0 0 64 64"><path d="M18 8h28v14a14 14 0 0 1-28 0z" fill="#ffd166"/><path d="M18 12H8c0 12 5 16 12 17M46 12h10c0 12-5 16-12 17" fill="none" stroke="#ffd166" stroke-width="4"/><path d="M28 36h8v10h8v8H20v-8h8z" fill="#ffb020"/></symbol>
+    <symbol id="i-helmet" viewBox="0 0 64 64"><path d="M8 38a24 24 0 0 1 48-4v10a6 6 0 0 1-6 6H22c-8 0-14-5-14-12z" fill="url(#g-ocean)" stroke="#fff" stroke-width="2.5"/><path d="M30 30h26v8H34a4 4 0 0 1-4-4z" fill="#06203f"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 96 96">
+      <path d="M48 4 88 20v30c0 22-17 36-40 42C25 86 8 72 8 50V20z" fill="#06203f" stroke="url(#g-ocean)" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M14 58h68v10H14z" fill="#0a84e0" opacity=".9"/><path d="M14 58h10v5H14zM34 58h10v5H34zM54 58h10v5H54zM74 58h8v5h-8zM24 63h10v5H24zM44 63h10v5H44zM64 63h10v5H64z" fill="#e9f6ff"/>
+      <g transform="translate(20 6) scale(.9)"><use href="#i-bolt"/></g>
+    </symbol>
+  </defs>
+</svg>
+<canvas id="gl"></canvas>
+<div id="fx"><i class="lines"></i><i class="glow"></i></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="hud-tl">
+    <div class="pos chip"><b id="hPos">1</b><span id="hPosOf">/8</span></div>
+    <div class="lap chip">LAP<div><b id="hLap">1</b>/<span id="hLaps">2</span></div></div>
+  </div>
+  <div class="hud-tc chip"><div id="hTime">0:00.000</div><div id="hBest"></div></div>
+  <div class="hud-tr chip"><canvas id="mini" width="260" height="260"></canvas></div>
+  <div class="hud-bc">
+    <div class="speed"><b id="hSpeed">0</b><span>KM/H</span></div>
+    <div class="nitro-row"><div class="nitro"><i id="hGauge"></i></div><div class="stock"><em id="hS1"><svg class="ic bolt" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-bolt"/></svg></em><em id="hS2"><svg class="ic bolt" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-bolt"/></svg></em></div></div>
+  </div>
+  <div id="hMsg"></div>
+  <div id="hWrong" class="hidden">⟲ WRONG WAY</div>
+  <button id="btnQuit" class="mini-btn">✕</button>
+  <button id="btnMute" class="mini-btn">♪</button>
+
+  <div class="pad pad-l">
+    <button class="ctl steer" id="cLeft" aria-label="Steer left"><svg class="ic" viewBox="0 0 64 64"><use href="#i-left"/></svg></button>
+    <button class="ctl steer" id="cRight" aria-label="Steer right"><svg class="ic flip" viewBox="0 0 64 64"><use href="#i-left"/></svg></button>
+  </div>
+  <div class="pad pad-r">
+    <button class="ctl brake" id="cBrake" aria-label="Brake"><svg class="ic" viewBox="0 0 64 64"><use href="#i-brake"/></svg></button>
+    <button class="ctl nitro-btn" id="cNitro" aria-label="Nitro"><svg class="ic bolt" viewBox="0 0 64 64" aria-hidden="true"><use href="#i-bolt"/></svg><span>NITRO</span></button>
+    <button class="ctl drift" id="cDrift" aria-label="Drift"><svg class="ic" viewBox="0 0 64 64"><use href="#i-drift"/></svg><span>DRIFT</span></button>
+  </div>
+</div>
+
+<!-- Screens -->
+<div id="ui">
+  <section id="sProfile" class="panel hidden">
+    <div class="logo"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#i-mark"/></svg><h1 id="evName">YEP RACING</h1></div>
+    <p class="sub" id="evSub"></p>
+    <label>Your name</label>
+    <input id="inName" maxlength="16" placeholder="e.g. Alex from Finance" autocomplete="off" enterkeyhint="done">
+    <label>Pick your team</label>
+    <div id="teamPick" class="teams"></div>
+    <button id="btnEnter" class="btn primary">ENTER</button>
+  </section>
+
+  <section id="sHome" class="panel hidden">
+    <div class="logo"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#i-mark"/></svg><h1 id="evName2">YEP RACING</h1></div>
+    <p class="prize" id="evPrize"></p>
+    <div class="me"><span id="meDot"></span><b id="meName"></b><a id="btnEdit">edit</a></div>
+    <div class="mybest">Your best: <b id="meBest">--</b> <span id="meRank"></span></div>
+    <button id="btnQuick" class="btn primary big"><svg class="ic" viewBox="0 0 64 64"><use href="#i-flag"/></svg>RACE NOW</button>
+    <div class="row">
+      <button id="btnCreate" class="btn">CREATE ROOM</button>
+      <div class="join"><input id="inCode" inputmode="numeric" maxlength="4" placeholder="Code"><button id="btnJoin" class="btn">JOIN</button></div>
+    </div>
+    <button id="btnGarage" class="btn ghost"><svg class="ic" viewBox="0 0 64 64"><use href="#i-helmet"/></svg>GARAGE · DRIVER &amp; COLOURS</button>
+    <button id="btnBoard" class="btn ghost"><svg class="ic" viewBox="0 0 64 64"><use href="#i-cup"/></svg>LEADERBOARD</button>
+    <p class="hint">Hold DRIFT through corners to fill nitro · tap NITRO when it flashes for a free burst · narrow blue lanes are shortcuts</p>
+  </section>
+
+  <section id="sLobby" class="panel hidden">
+    <h2 id="lbTitle">LOBBY</h2>
+    <div class="code" id="lbCode"></div>
+    <ul id="lbPlayers" class="plist"></ul>
+    <p id="lbInfo" class="sub"></p>
+    <button id="btnGo" class="btn primary hidden">START RACE</button>
+    <button id="btnLeave" class="btn ghost">LEAVE</button>
+  </section>
+
+  <section id="sResult" class="panel hidden">
+    <h2>RESULTS</h2>
+    <div id="rsMine" class="mine"></div>
+    <ol id="rsList" class="rlist"></ol>
+    <button id="btnAgain" class="btn primary">RACE AGAIN</button>
+    <div class="row"><button id="btnBoard2" class="btn ghost"><svg class="ic" viewBox="0 0 64 64"><use href="#i-cup"/></svg>RANKING</button><button id="btnHome" class="btn ghost">HOME</button></div>
+  </section>
+
+  <section id="sGarage" class="panel hidden">
+    <h2>GARAGE</h2>
+    <label>Driver</label><div id="gChars" class="chips"></div>
+    <label>Driver colour</label><div id="gCharCol" class="swatches"></div>
+    <label>Kart colour</label><div id="gKartCol" class="swatches"></div>
+    <p class="sub">Looks only — every kart has the same speed and handling.</p>
+    <button id="btnGarageDone" class="btn primary">DONE</button>
+  </section>
+
+  <section id="sBoard" class="panel hidden">
+    <h2>LEADERBOARD</h2>
+    <div class="tabs"><button id="tabSolo" class="on">Players</button><button id="tabTeam">Teams</button></div>
+    <ol id="bdList" class="rlist tall"></ol>
+    <button id="btnBack" class="btn ghost">CLOSE</button>
+  </section>
+</div>
+<div id="toast" class="hidden"></div>
+<div id="loading"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#i-mark"/></svg><span>Loading track…</span></div>
+<script type="module" src="/dist/game.js"></script>
+</body>
+</html>

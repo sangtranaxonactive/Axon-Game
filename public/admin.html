@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YEP Racing — Admin</title>
+<style>
+  body { margin: 0; padding: 24px; background: #10131f; color: #e8ebf5; font: 15px system-ui, sans-serif; max-width: 640px; }
+  input { padding: 9px 11px; background: #0f1220; border: 1px solid #2f3660; color: #fff; border-radius: 8px; width: 240px; font-size: 15px; }
+  button { padding: 10px 14px; border-radius: 9px; border: 1px solid #39407a; background: #252b4d; color: #fff; cursor: pointer; font-size: 15px; margin: 6px 6px 0 0; }
+  button.danger { background: #b3261e; border-color: #b3261e; } pre { background: #0f1220; padding: 12px; border-radius: 8px; }
+  a { color: #7fb4ff; }
+</style>
+</head>
+<body>
+<h1>YEP Racing — Admin</h1>
+<p>Admin key (from <code>config.json</code> / <code>ADMIN_KEY</code>, or printed in the server log): <br><input id="key" type="password" autocomplete="off"></p>
+<button id="stats">Refresh stats</button>
+<button id="csv">Download results (CSV)</button>
+<button id="reset" class="danger">Reset leaderboard</button>
+<pre id="out">—</pre>
+<p>Links: <a href="/screen" target="_blank">big screen</a> · <a href="/editor" target="_blank">track editor</a> · <a href="/" target="_blank">game</a></p>
+<script>
+const $ = id => document.getElementById(id), out = t => $('out').textContent = t;
+const H = () => ({ 'x-admin-key': $('key').value });
+$('stats').onclick = async () => out(JSON.stringify(await (await fetch('/api/stats')).json(), null, 2));
+$('csv').onclick = async () => {
+  const r = await fetch('/api/admin/export.csv', { headers: H() });
+  if (!r.ok) return out('Wrong admin key');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(await r.blob()); a.download = 'yep-racing-results.csv'; a.click(); out('Downloaded.');
+};
+$('reset').onclick = async () => {
+  if (!confirm('Erase ALL times? A backup file is kept on the server.')) return;
+  const r = await fetch('/api/admin/reset', { method: 'POST', headers: H() });
+  out(r.ok ? 'Leaderboard reset.' : 'Wrong admin key');
+};
+$('stats').click();
+</script>
+</body>
+</html>

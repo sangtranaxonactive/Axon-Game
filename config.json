@@ -1,0 +1,51 @@
+{
+  "eventName": "YEP RACING 2026",
+  "subtitle": "Year End Party Grand Prix",
+  "prize": "The #1 racer wins a special prize at the party!",
+  "map": "company",
+  "laps": 2,
+  "roomSize": 8,
+  "publicWaitMs": 12000,
+  "teamTopN": 5,
+  "adminKey": "change-me",
+  "teams": [
+    {
+      "id": "red",
+      "name": "Red Rockets",
+      "color": "#ff3b4e"
+    },
+    {
+      "id": "blue",
+      "name": "Blue Bolts",
+      "color": "#2f8bff"
+    },
+    {
+      "id": "yellow",
+      "name": "Gold Rush",
+      "color": "#ffc21a"
+    },
+    {
+      "id": "green",
+      "name": "Green Machine",
+      "color": "#20c46b"
+    },
+    {
+      "id": "purple",
+      "name": "Purple Storm",
+      "color": "#a45bff"
+    },
+    {
+      "id": "orange",
+      "name": "Orange Crush",
+      "color": "#ff7a1a"
+    }
+  ],
+  "company": "AXON ACTIVE",
+  "values": [
+    "OPENNESS",
+    "COURAGE",
+    "RESPECT",
+    "FOCUS",
+    "COMMITMENT"
+  ]
+}
