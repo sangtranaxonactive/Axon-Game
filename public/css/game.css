@@ -234,3 +234,44 @@ kbd { display: inline-block; font: 700 11px var(--body); padding: 1px 6px; margi
 .item-btn kbd { display: none; position: absolute; left: -6px; top: -6px; margin: 0; }
 body.kbd #keys { display: block; } body.kbd .item-btn kbd { display: block; }
 #hMsg:empty { display: none; }
+
+/* ---------- update 13: landscape race layout. Rule: nothing but the kart in the middle 60% of the screen.
+   Info sits in a thin strip along the top edge, controls in the two bottom corners inside thumb reach. ---------- */
+@media (orientation: landscape) {
+  #hud { --pad: max(10px, env(safe-area-inset-left)); --padr: max(10px, env(safe-area-inset-right)); --top: max(6px, env(safe-area-inset-top)); --bot: max(8px, env(safe-area-inset-bottom)); }
+  .chip { background: rgba(3, 18, 38, .5); border-color: rgba(140, 200, 255, .14); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+  /* top-left: position and lap on one line */
+  .hud-tl { gap: 6px; align-items: center; }
+  .pos { padding: 0 9px 1px 7px; border-radius: 9px; border-left-width: 4px; } .pos b { font-size: clamp(24px, 4.6vh + 8px, 36px); } .pos span { font-size: clamp(12px, 2vh + 5px, 16px); }
+  .lap { flex-direction: row; align-items: baseline; gap: 5px; padding: 4px 9px; border-radius: 9px; font-size: 11px; } .lap div { font-size: clamp(15px, 2.6vh + 6px, 20px); }
+  /* top-centre: clock, small */
+  .hud-tc { padding: 2px 12px; border-radius: 9px; } #hTime { font-size: clamp(16px, 3vh + 6px, 22px); } #hBest { display: none; }
+  /* top-right: minimap, then the three tiny utilities tucked to its left */
+  .hud-tr { right: var(--padr); padding: 3px; border-radius: 10px; }
+  #mini { width: clamp(84px, 24vh, 124px); height: clamp(84px, 24vh, 124px); opacity: .92; }
+  .mini-btn { top: var(--top); left: auto; right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 14px); width: 28px; height: 28px; font-size: 12px; opacity: .7; border-radius: 8px; }
+  #btnMute { left: auto; right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 48px); }
+  #hNet { left: auto; top: calc(var(--top) + 7px); right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 84px); }
+  /* messages: countdown stays big; everything else is a small pill directly under the clock */
+  #hMsg.xs { top: calc(var(--top) + 46px); transform: translateX(-50%); font-size: clamp(13px, 2.4vh + 5px, 18px); }
+  #hMsg.sm { top: 24%; font-size: clamp(26px, 9vh, 52px); }
+  #hWrong { top: calc(var(--top) + 46px); font-size: 14px; padding: 3px 12px; }
+  /* bottom-centre: speed and nitro, low and narrow, under the kart rather than ahead of it */
+  .hud-bc { bottom: var(--bot); width: clamp(130px, 22vw, 200px); }
+  .speed b { font-size: clamp(22px, 5vh + 6px, 34px); } .speed span { font-size: 10px; }
+  .nitro { height: 7px; } .stock em { width: 16px; height: 16px; } .nitro-row { margin-top: 2px; gap: 5px; }
+  #keys { bottom: calc(var(--bot) + 62px); }
+  /* controls */
+  .ctl { border-width: 1.5px; background: radial-gradient(circle at 50% 30%, rgba(60, 150, 230, .22), rgba(3, 20, 44, .34)); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+  .ctl::after { content: ""; position: absolute; inset: -9px; border-radius: 50%; } /* forgiving touch area around every button */
+  .pad { bottom: var(--bot); }
+  .pad-l { left: var(--pad); gap: 12px; } .pad-l .ctl { position: relative; }
+  .steer { width: clamp(72px, 22vh, 98px); height: clamp(72px, 22vh, 98px); }
+  .pad-r { right: var(--padr); display: block; width: clamp(196px, 56vh, 250px); height: clamp(170px, 48vh, 214px); }
+  .pad-r .ctl { position: absolute; margin: 0; }
+  .drift { right: 0; bottom: 0; width: clamp(84px, 25vh, 112px); height: clamp(84px, 25vh, 112px); font-size: 15px; }
+  .nitro-btn { right: clamp(92px, 27vh, 122px); bottom: 4px; width: clamp(70px, 20.5vh, 92px); height: clamp(70px, 20.5vh, 92px); font-size: 12px; margin: 0; }
+  .item-btn { right: 6px; bottom: clamp(92px, 27vh, 122px); width: clamp(60px, 17.5vh, 80px); height: clamp(60px, 17.5vh, 80px); margin: 0; }
+  .nitro-btn.ready, .nitro-btn.tap, .item-btn { opacity: 1; }
+  #fx.boost .lines { opacity: .32; }
+}

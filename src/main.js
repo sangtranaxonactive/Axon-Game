@@ -558,7 +558,8 @@ function frame() {
       fovT = portrait ? 66 : 48;
     } else {
       camera.position.set(rxp - Math.sin(race.camH) * dist, c.y + height, rzp - Math.cos(race.camH) * dist);
-      look.set(rxp + Math.sin(race.camH) * 5, c.y + 1.3, rzp + Math.cos(race.camH) * 5);
+      const ahead = portrait ? 5 : 9;
+      look.set(rxp + Math.sin(race.camH) * ahead, c.y + (portrait ? 1.3 : 2.1), rzp + Math.cos(race.camH) * ahead);
     }
     camera.fov += (fovT - camera.fov) * Math.min(1, dt * 4);
     camera.updateProjectionMatrix();
