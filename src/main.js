@@ -236,8 +236,8 @@ function onMessage(m) {
     case 'start': room = m; startRace(m); break;
     case 'S': if (race) { const nowT = performance.now(); for (const s of m.ps) { const r = race.remotes.get(s[0]); if (!r) continue; const el = (nowT - (r.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { r.vx = (s[1] - r.sx) / el; r.vz = (s[2] - r.sz) / el; } r.sx = r.tx = s[1]; r.sz = r.tz = s[2]; r.at = nowT; r.th = s[3]; r.p = s[4]; r.flags = s[5]; } } break;
     case 'ev': if (race && m.r === race.id) race.pred.onEvent(m.k, m.c); break;
-    case 'item': setItem(m.kind, m.n); break;
-    case 'box': items.takeBox(m.i, m.ms); if (m.by === me.id) audio.ready(); break;
+    case 'item': if (m.kind && (m.kind !== myItem || m.n > myCount)) { flash(ITEM_NAME[m.kind] + (isTouch ? '' : ' — press E'), 1100, 'xs'); audio.ready(); } setItem(m.kind, m.n); break;
+    case 'box': items.takeBox(m.i, m.ms); break;
     case 'ban': if (m.add) items.addBanana(m.add[0], m.add[1], m.add[2]); else items.delBanana(m.del); break;
     case 'fx': if (race && m.k === 'magnet' && m.from === me.id) flash('MAGNET!', 700, 'xs'); break;
     case 'p': netq.onPong(m.c); break;
@@ -305,10 +305,11 @@ function kickFx() {
 
 // ------------------------------------------------------------------ items + connection quality
 const items = createItems(scene, track);
-let myItem = null;
+let myItem = null, myCount = 0;
+const ITEM_NAME = { banana: 'BANANA ×2', magnet: 'MAGNET', nitro: 'NITRO ITEM' };
 const ITEM_ICON = { banana: '#i-banana', magnet: '#i-magnet', nitro: '#i-bolt' };
 function setItem(kind, n) {
-  myItem = kind; const b = $('cItem');
+  myItem = kind; myCount = n; const b = $('cItem');
   b.classList.toggle('hidden', !kind);
   if (kind) { b.querySelector('use').setAttribute('href', ITEM_ICON[kind]); b.querySelector('span').textContent = n > 1 ? '×' + n : ''; }
 }
@@ -615,4 +616,5 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) audio
 frame();
 if (cfg.testHooks) window.__game = { get race() { return race; }, inp, track, me }; // automated tests only (server started with TEST_HOOKS=1)
 
+if (!isTouch) document.body.classList.add('kbd');
 $('btnPortrait').onclick = () => document.body.classList.add('allow-portrait');

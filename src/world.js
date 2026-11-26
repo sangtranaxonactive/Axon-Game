@@ -228,12 +228,12 @@ export async function buildWorld(scene, renderer, track, map, cfg) {
 
   // --- slow strips: red/white hazard patches; touching one slows the kart for two seconds
   if (track.slowZones.length) {
-    const slowTex = canvasTex(256, 128, (g, w2, h2) => {
-      g.fillStyle = '#d7262c'; g.fillRect(0, 0, w2, h2);
-      g.fillStyle = '#ffffff'; for (let x = -h2; x < w2 + h2; x += 44) { g.beginPath(); g.moveTo(x, h2); g.lineTo(x + 22, h2); g.lineTo(x + 22 + h2, 0); g.lineTo(x + h2, 0); g.fill(); }
-      g.fillStyle = '#1a1c22'; g.fillRect(34, 36, w2 - 68, 56); g.fillStyle = '#ffd43a'; g.font = '900 50px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SLOW', w2 / 2, h2 / 2 + 3);
+    const slowTex = canvasTex(128, 128, (g, w2, h2) => { // same design as the boost pad, in red, no lettering
+      g.fillStyle = '#4a0a10'; g.fillRect(0, 0, w2, h2);
+      g.strokeStyle = '#ff3b4a'; g.lineWidth = 14; g.lineJoin = 'round';
+      for (const y of [100, 60, 20]) { g.beginPath(); g.moveTo(22, y + 20); g.lineTo(64, y - 12); g.lineTo(106, y + 20); g.stroke(); }
     }, false);
-    const slowMat = new THREE.MeshStandardMaterial({ map: slowTex, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 });
+    const slowMat = new THREE.MeshStandardMaterial({ map: slowTex, emissiveMap: slowTex, emissive: '#ffffff', emissiveIntensity: 1.1, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2 });
     for (const zn of track.slowZones) {
       const s = track.samples[zn.idx];
       const m = new THREE.Mesh(new THREE.PlaneGeometry(zn.hw * 2, (zn.len * 2 + 1) * track.step), slowMat);

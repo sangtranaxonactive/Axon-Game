@@ -338,11 +338,11 @@ function pushEvent(pl, code) {
 function sendItem(pl) { send(pl.ws, { t: 'item', kind: pl.item ? pl.item.kind : null, n: pl.item ? pl.item.n : 0 }); }
 function touchItems(pl, room, car) {
   const now = Date.now(), boxes = track.itemBoxes, N = track.N;
-  if (!pl.item) for (let i = 0; i < boxes.length; i++) {
+  for (let i = 0; i < boxes.length; i++) { // a box is always taken by whoever touches it first; a new item replaces the one in hand
     const bx = boxes[i];
     let d = car.idx - bx.idx; if (d > N / 2) d -= N; else if (d < -N / 2) d += N;
-    if (d < -1 || d > 1 || room.boxAt[i] > now) continue;
-    if ((car.x - bx.x) * (car.x - bx.x) + (car.z - bx.z) * (car.z - bx.z) > 2.6 * 2.6) continue;
+    if (d < -2 || d > 2 || room.boxAt[i] > now) continue;
+    if ((car.x - bx.x) * (car.x - bx.x) + (car.z - bx.z) * (car.z - bx.z) > 3.2 * 3.2) continue;
     room.boxAt[i] = now + (config.boxRespawnMs || 3000);
     const r = Math.random();
     pl.item = r < 0.4 ? { kind: 'banana', n: 2 } : r < 0.7 ? { kind: 'magnet', n: 1 } : { kind: 'nitro', n: 1 };
@@ -426,7 +426,7 @@ wss.on('connection', ws => {
     }
     if (m.t === 'watch') { // commentator / organiser view: needs the host code, never mixes with players
       if (pl || screens.has(ws)) return;
-      if (String(m.code || '') !== String(config.hostCode)) { if (++ws.bad >= 5) return ws.terminate(); return send(ws, { t: 'err', msg: 'Wrong code' }); }
+      if (String(m.code || '') !== String(config.hostCode)) { if (++ws.bad >= 5) return ws.terminate(); return send(ws, { t: 'err', msg: 'Wrong host code. This is not the 4-digit room code — ask the organiser for the host code.' }); }
       if (!ws.spec && specCount >= 40) return send(ws, { t: 'err', msg: 'Too many viewers' });
       if (!ws.spec) { ws.spec = true; specCount++; }
       clearTimeout(ws.helloTimer);

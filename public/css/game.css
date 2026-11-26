@@ -226,3 +226,11 @@ input:focus { border-color: var(--surf); box-shadow: 0 0 0 3px rgba(53, 200, 245
 #rotate button { margin-top: 10px; background: none; border: 1px solid var(--line); color: var(--mute); border-radius: 10px; padding: 9px 14px; font: 600 13px var(--body); }
 @media (orientation: portrait) and (pointer: coarse) { body:not(.allow-portrait) #rotate { display: flex; } }
 @media (orientation: portrait) { .mini-btn { top: calc(var(--top) + var(--u) * 17); } #hNet { top: calc(var(--top) + var(--u) * 17 + 8px); } .item-btn { margin: 0; } .nitro-btn { margin: 0; } }
+
+/* keyboard hints: only on devices without a touch screen */
+#keys { display: none; left: 50%; transform: translateX(-50%); bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--u) * 9.5); font: 600 12px var(--body); color: rgba(233,246,255,.85); white-space: nowrap; background: rgba(3,18,38,.6); padding: 4px 10px; border-radius: 99px; }
+kbd { display: inline-block; font: 700 11px var(--body); padding: 1px 6px; margin: 0 2px 0 8px; border-radius: 5px; background: #e9f6ff; color: #06203f; box-shadow: 0 2px 0 #7fa3c4; }
+#keys kbd:first-child { margin-left: 0; }
+.item-btn kbd { display: none; position: absolute; left: -6px; top: -6px; margin: 0; }
+body.kbd #keys { display: block; } body.kbd .item-btn kbd { display: block; }
+#hMsg:empty { display: none; }
