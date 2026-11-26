@@ -53,6 +53,16 @@ async function startedRace(pid) {
   c = await startedRace('cheat-test-bad-bits-0000001'); c.send({ t: 'i', r: c.race, k: 0, b: [0, 999, -1, 1.5, 'x'] }); await sleep(300);
   check('invalid button values rejected', c.msgs.some(m => m.t === 'err')); c.ws.close();
 
+  // --- items and the commentator channel
+  c = await startedRace('cheat-test-item-spam-00001'); for (let i = 0; i < 20; i++) c.send({ t: 'use' }); c.send({ t: 'ev', k: 5, c: 1 }); await sleep(400);
+  check('using items you do not hold does nothing', !c.msgs.some(m => m.t === 'ev' || m.t === 'ban' || m.t === 'fx')); c.ws.close();
+  c = await client(); c.send({ t: 'watch', code: 'wrong-code' }); await sleep(300);
+  check('live view needs the host code', c.msgs.some(m => m.t === 'err') && !c.msgs.some(m => m.t === 'watching'));
+  c.send({ t: 'rooms' }); c.send({ t: 'spec', room: '1234' }); await sleep(300);
+  check('no room data without the host code', !c.msgs.some(m => m.t === 'rooms' || m.t === 'room' || m.t === 'start'));
+  for (let i = 0; i < 6; i++) c.send({ t: 'watch', code: 'guess' + i }); await sleep(400);
+  check('guessing the host code gets disconnected', c.ws.readyState !== 1);
+
   // --- flooding
   c = await client('cheat-test-flooder-00000001'); await c.wait('welcome');
   for (let i = 0; i < 500; i++) c.ws.send(i % 2 ? '{}' : 'garbage');

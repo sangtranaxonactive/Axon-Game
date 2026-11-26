@@ -8,6 +8,8 @@ services:
     envVars:
       - key: ADMIN_KEY
         generateValue: true
+      - key: HOST_CODE
+        generateValue: true
     disk:
       name: leaderboard
       mountPath: /data

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YEP Racing — Live</title>
+<link rel="stylesheet" href="/css/game.css">
+<style>
+  html, body { touch-action: auto; }
+  #gl { cursor: grab; } #gl:active { cursor: grabbing; }
+  #top { position: fixed; left: 0; right: 0; top: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(3,16,31,.85), rgba(3,16,31,0)); font-family: var(--display); }
+  #top h1 { font-size: 30px; margin: 0; text-align: left; } #top .live { background: #e5283c; color: #fff; font-weight: 800; letter-spacing: .16em; padding: 2px 10px; border-radius: 6px; font-size: 16px; animation: blink 1.4s infinite; }
+  @keyframes blink { 50% { opacity: .55; } }
+  #clock { margin-left: auto; font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; } #roomTag { color: var(--mute); font-size: 18px; letter-spacing: .12em; }
+  #board { position: fixed; left: 16px; top: 78px; width: 290px; display: flex; flex-direction: column; gap: 5px; font-family: var(--display); }
+  #board button { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); background: rgba(4, 22, 44, .78); color: #fff; font: 700 19px var(--display); text-align: left; cursor: pointer; backdrop-filter: blur(6px); }
+  #board button.on { border-color: var(--surf); background: rgba(10, 132, 224, .8); }
+  #board .n { width: 22px; font-style: italic; font-weight: 800; color: var(--gold); } #board i { width: 12px; height: 12px; border-radius: 3px; transform: skewX(-12deg); flex: none; }
+  #board .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } #board .lp { color: var(--mute); font-size: 15px; font-variant-numeric: tabular-nums; }
+  #cam { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 6px; font-family: var(--display); flex-wrap: wrap; justify-content: flex-end; max-width: 60vw; }
+  #cam button { padding: 8px 13px; border-radius: 10px; border: 1px solid var(--line); background: rgba(4, 22, 44, .8); color: #fff; font: 700 16px var(--display); letter-spacing: .1em; cursor: pointer; }
+  #cam button.on { background: var(--ocean); border-color: var(--surf); }
+  #help { position: fixed; left: 16px; bottom: 14px; color: rgba(233,246,255,.7); font-size: 12.5px; max-width: 46vw; line-height: 1.5; text-shadow: 0 1px 3px #000; }
+  #big { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); font: italic 800 110px var(--display); color: #fff; text-shadow: 0 4px 0 var(--ocean-2), 0 0 40px rgba(53,200,245,.9); pointer-events: none; }
+  body.clean #board, body.clean #cam, body.clean #help { display: none; }
+  .rooms { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+  .rooms button { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgba(2, 14, 30, .5); color: #fff; font: 600 14px var(--body); cursor: pointer; }
+  .rooms button b { font: 800 20px var(--display); letter-spacing: .08em; margin-right: 8px; } .rooms .st { float: right; color: var(--surf); font: 700 14px var(--display); letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="view" class="hidden">
+  <div id="top"><h1 id="evName">YEP RACING</h1><span class="live">LIVE</span><span id="roomTag"></span><div id="clock">0:00.0</div></div>
+  <div id="board"></div>
+  <div id="big"></div>
+  <div id="cam">
+    <button data-m="chase" class="on">CHASE</button><button data-m="high">HIGH</button><button data-m="top">TOP</button><button data-m="front">FRONT</button><button data-m="map">TRACK</button>
+    <button id="bAuto">AUTO LEADER</button><button id="bRooms">ROOMS</button>
+  </div>
+  <div id="help">Click a name or press 1–8 to follow a racer · ←/→ next racer · drag to look around · scroll to zoom · double-click to reset · H hides the panels for a clean stream</div>
+</div>
+<div id="ui">
+  <section id="sCode" class="panel">
+    <h2>LIVE VIEW</h2>
+    <p class="sub">For commentators and organisers. Racers never see this screen.</p>
+    <label>Host code</label>
+    <input id="inCode" inputmode="numeric" autocomplete="off" placeholder="Code from the organiser">
+    <button id="btnWatch" class="btn primary">OPEN</button>
+    <a class="rolelink" href="/">← Back to the game</a>
+  </section>
+  <section id="sRooms" class="panel hidden">
+    <h2>CHOOSE A RACE</h2>
+    <div id="roomList" class="rooms"></div>
+    <p class="sub">The list refreshes by itself. For the final, ask the racers to use CREATE ROOM and pick that room here.</p>
+  </section>
+  <section id="sWait" class="panel hidden">
+    <h2 id="waitTitle">WAITING FOR THE START</h2>
+    <ul id="waitList" class="plist"></ul>
+    <button id="btnBackRooms" class="btn ghost">OTHER RACES</button>
+  </section>
+  <section id="sEnd" class="panel hidden">
+    <h2>RESULTS</h2>
+    <ol id="endList" class="rlist"></ol>
+    <button id="btnEndRooms" class="btn primary">NEXT RACE</button>
+  </section>
+</div>
+<div id="toast" class="hidden"></div>
+<div id="loading"><span>Loading track…</span></div>
+<script type="module" src="/dist/live.js"></script>
+</body>
+</html>

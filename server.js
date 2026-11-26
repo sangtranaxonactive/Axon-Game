@@ -19,6 +19,11 @@ if (!config.adminKey || config.adminKey === 'change-me') {
   config.adminKey = require('crypto').randomBytes(9).toString('base64url');
   console.log('[admin] adminKey not set -> temporary key for this run:', config.adminKey);
 }
+if (process.env.HOST_CODE) config.hostCode = process.env.HOST_CODE;
+if (!config.hostCode || config.hostCode === 'change-me') {
+  config.hostCode = String(100000 + require('crypto').randomInt(900000));
+  console.log('[live] hostCode not set -> commentator code for this run:', config.hostCode);
+}
 process.on('uncaughtException', e => console.error('[uncaught]', e));
 process.on('unhandledRejection', e => console.error('[unhandled]', e));
 if (process.env.MAP) config.map = process.env.MAP;
@@ -179,7 +184,7 @@ async function handle(req, res) {
     if (key !== config.adminKey) { res.writeHead(403); return res.end('Admin key required: /editor?key=...'); }
     if (url.searchParams.get('key')) res.setHeader('Set-Cookie', `ek=${encodeURIComponent(key)}; Path=/; HttpOnly; SameSite=Strict`);
   }
-  if (['/screen', '/editor', '/admin'].includes(p)) p += '.html';
+  if (['/screen', '/editor', '/admin', '/live'].includes(p)) p += '.html';
   if (p.endsWith('.map')) { res.writeHead(404); return res.end(); }
   const f = safeJoin(PUB, p);
   if (!f) { res.writeHead(403); return res.end(); }
@@ -197,7 +202,14 @@ function send(ws, obj) { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); 
 function broadcast(room, obj) {
   const s = JSON.stringify(obj);
   for (const pl of room.players) if (pl.ws.readyState === 1) pl.ws.send(s);
+  for (const ws of room.specs) if (ws.readyState === 1 && ws.bufferedAmount < 262144) ws.send(s);
 }
+function roomList() {
+  const out = [];
+  for (const r of rooms.values()) { out.push({ code: r.code, pub: r.pub, state: r.state, names: r.players.map(p => p.name) }); if (out.length >= 60) break; }
+  return out;
+}
+function dropSpecs(room) { for (const ws of room.specs) { ws.specRoom = null; send(ws, { t: 'gone' }); } room.specs.clear(); }
 function countRacing() { let n = 0; for (const r of rooms.values()) if (r.state === 'racing' || r.state === 'countdown') n += r.players.length; return n; }
 // Cosmetic look [character, characterColour, kartColour] — never used by the simulation.
 function cleanLook(l) {
@@ -218,7 +230,7 @@ function newRoom(pub) {
   if (rooms.size >= 2000) return null;
   let code;
   do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (rooms.has(code));
-  const room = { code, pub, state: 'lobby', players: [], host: null, autoAt: null, timers: [] };
+  const room = { code, pub, state: 'lobby', players: [], host: null, autoAt: null, timers: [], specs: new Set(), bananas: new Map(), banSeq: 0, boxAt: [] };
   rooms.set(code, room);
   return room;
 }
@@ -242,7 +254,7 @@ function leaveRoom(pl) {
   if (!room) return;
   pl.room = null;
   room.players = room.players.filter(p => p !== pl);
-  if (!room.players.length) { room.timers.forEach(clearTimeout); rooms.delete(room.code); return; }
+  if (!room.players.length) { room.timers.forEach(clearTimeout); rooms.delete(room.code); dropSpecs(room); return; }
   if (room.host === pl) room.host = room.players[0];
   broadcast(room, roomInfo(room));
   if (room.state === 'racing') checkRaceEnd(room);
@@ -259,8 +271,9 @@ function startRace(room) {
   const grid = {};
   for (const p of room.players) {
     const h = sim.gridPlace(track, p.slot).heading;
-    p.car = sim.createCar(track, p.slot, h); p.finished = false; grid[p.id] = h;
+    p.car = sim.createCar(track, p.slot, h); p.car.evq = []; p.finished = false; p.item = null; grid[p.id] = h;
   }
+  room.boxAt = track.itemBoxes.map(() => 0); room.bananas.clear();
   broadcast(room, { ...roomInfo(room), t: 'start', countdown: COUNT, laps: config.laps, grid, race: room.raceId });
   room.timers.push(setTimeout(() => { room.state = 'racing'; }, COUNT));
   room.timers.push(setTimeout(() => endRace(room), COUNT + 6 * 60000)); // hard cap
@@ -283,7 +296,7 @@ function endRace(room) {
   if (room.pub) {
     // Public rooms are single-use: players re-queue from the results screen.
     for (const p of room.players) p.room = null;
-    rooms.delete(room.code);
+    rooms.delete(room.code); dropSpecs(room);
   } else {
     room.state = 'lobby';
     broadcast(room, roomInfo(room));
@@ -305,15 +318,69 @@ function onInput(pl, m) {
   // Inputs may never run ahead of real time (no fast-forwarding).
   if (car.tick + b.length > (Date.now() - room.startAt) / sim.TICK_MS + 20 || car.tick > MAX_TICKS) return desync(pl, 'clock');
   for (let i = 0; i < b.length; i++) if (!Number.isInteger(b[i]) || b[i] < 0 || b[i] > 31) return desync(pl, 'bad input');
-  for (let i = 0; i < b.length; i++) sim.stepCar(track, pads, car, b[i], config.laps);
+  for (let i = 0; i < b.length; i++) {
+    while (car.evq.length && car.evq[0].k <= car.tick) sim.applyEvent(car, car.evq.shift().c);
+    sim.stepCar(track, pads, car, b[i], config.laps);
+    if (car.finishMs === null && car.sc < 0) touchItems(pl, room, car);
+  }
   if (car.finishMs !== null && !pl.finished) onFinish(pl);
+}
+
+// ---- items. Everything here is decided by the server; karts only ever receive the resulting effect.
+const EV_NOTICE = 12; // an effect is applied this many ticks after the server's current tick for that kart
+function pushEvent(pl, code) {
+  const car = pl.car;
+  if (!car || pl.finished || !pl.room) return;
+  const k = car.tick + EV_NOTICE;
+  car.evq.push({ k, c: code });
+  send(pl.ws, { t: 'ev', r: pl.room.raceId, k, c: code });
+}
+function sendItem(pl) { send(pl.ws, { t: 'item', kind: pl.item ? pl.item.kind : null, n: pl.item ? pl.item.n : 0 }); }
+function touchItems(pl, room, car) {
+  const now = Date.now(), boxes = track.itemBoxes, N = track.N;
+  if (!pl.item) for (let i = 0; i < boxes.length; i++) {
+    const bx = boxes[i];
+    let d = car.idx - bx.idx; if (d > N / 2) d -= N; else if (d < -N / 2) d += N;
+    if (d < -1 || d > 1 || room.boxAt[i] > now) continue;
+    if ((car.x - bx.x) * (car.x - bx.x) + (car.z - bx.z) * (car.z - bx.z) > 2.6 * 2.6) continue;
+    room.boxAt[i] = now + (config.boxRespawnMs || 3000);
+    const r = Math.random();
+    pl.item = r < 0.4 ? { kind: 'banana', n: 2 } : r < 0.7 ? { kind: 'magnet', n: 1 } : { kind: 'nitro', n: 1 };
+    sendItem(pl);
+    broadcast(room, { t: 'box', i, ms: config.boxRespawnMs || 3000, by: pl.id });
+    break;
+  }
+  for (const [id, bn] of room.bananas) {
+    if ((car.x - bn.x) * (car.x - bn.x) + (car.z - bn.z) * (car.z - bn.z) > 2.1 * 2.1) continue;
+    if (bn.owner === pl.id && now - bn.at < 1500) continue; // don't slip on the one you just dropped
+    room.bananas.delete(id);
+    pushEvent(pl, sim.FX.BANANA);
+    broadcast(room, { t: 'ban', del: id, hit: pl.id });
+  }
+}
+function useItem(pl) {
+  const room = pl.room, car = pl.car, it = pl.item;
+  if (!room || !car || !it || room.state !== 'racing' || pl.finished) return;
+  if (it.kind === 'nitro') pushEvent(pl, sim.FX.NITRO);
+  else if (it.kind === 'banana') {
+    if (room.bananas.size >= 24) room.bananas.delete(room.bananas.keys().next().value);
+    const id = ++room.banSeq, x = Math.round((car.x - Math.sin(car.h) * 3.4) * 100) / 100, z = Math.round((car.z - Math.cos(car.h) * 3.4) * 100) / 100;
+    room.bananas.set(id, { x, z, owner: pl.id, at: Date.now() });
+    broadcast(room, { t: 'ban', add: [id, x, z] });
+  } else { // magnet: slow the racer directly ahead for three seconds and get a small pull forward
+    let target = null;
+    for (const p of room.players) if (p !== pl && p.car && !p.finished && p.car.prog > car.prog && (!target || p.car.prog < target.car.prog)) target = p;
+    if (target) { pushEvent(target, sim.FX.MAGNET); broadcast(room, { t: 'fx', k: 'magnet', from: pl.id, to: target.id }); }
+    pushEvent(pl, sim.FX.PULL);
+  }
+  if (--it.n <= 0) pl.item = null;
+  sendItem(pl);
 }
 function onFinish(pl) {
   const room = pl.room, now = Date.now();
   // Official time = simulated time. Running the simulation slower than real time (slow motion) is capped.
   const wall = now - room.startAt;
   const time = Math.round(Math.max(pl.car.finishMs, wall - 1500));
-  pl.finished = true;
   pl.finished = true;
   const entry = board[pl.pid] || (board[pl.pid] = { name: pl.name, team: pl.team, best: null, races: 0 });
   entry.name = pl.name; entry.team = pl.team; entry.races++; entry.at = now;
@@ -344,7 +411,7 @@ setInterval(() => {
 
 wss.on('connection', ws => {
   if (wss.clients.size > (config.maxConnections || 1500)) return ws.terminate();
-  ws.alive = true; ws.msgs = 0;
+  ws.alive = true; ws.msgs = 0; ws.bad = 0;
   ws.helloTimer = setTimeout(() => ws.terminate(), 15000); // must identify as player or screen
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', raw => {
@@ -356,6 +423,31 @@ wss.on('connection', ws => {
       if (pl || screens.has(ws) || screens.size >= 30) return;
       screens.add(ws); clearTimeout(ws.helloTimer);
       return send(ws, { t: 'board', ...leaderboard(), recent, record: null });
+    }
+    if (m.t === 'watch') { // commentator / organiser view: needs the host code, never mixes with players
+      if (pl || screens.has(ws)) return;
+      if (String(m.code || '') !== String(config.hostCode)) { if (++ws.bad >= 5) return ws.terminate(); return send(ws, { t: 'err', msg: 'Wrong code' }); }
+      if (!ws.spec && specCount >= 40) return send(ws, { t: 'err', msg: 'Too many viewers' });
+      if (!ws.spec) { ws.spec = true; specCount++; }
+      clearTimeout(ws.helloTimer);
+      return send(ws, { t: 'watching', rooms: roomList(), map: config.map });
+    }
+    if (ws.spec) {
+      if (m.t === 'rooms') return send(ws, { t: 'rooms', rooms: roomList() });
+      if (m.t === 'spec') {
+        if (ws.specRoom) { ws.specRoom.specs.delete(ws); ws.specRoom = null; }
+        const room = rooms.get(String(m.room));
+        if (!room) return send(ws, { t: 'gone' });
+        room.specs.add(ws); ws.specRoom = room;
+        send(ws, roomInfo(room));
+        if (room.state !== 'lobby') {
+          const grid = {}; for (const p of room.players) grid[p.id] = sim.gridPlace(track, p.slot).heading;
+          const now = Date.now();
+          send(ws, { ...roomInfo(room), t: 'start', countdown: Math.max(0, room.startAt - now), laps: config.laps, grid, race: room.raceId,
+            boxes: room.boxAt.map(at => Math.max(0, at - now)), bananas: [...room.bananas].map(([id, bn]) => [id, bn.x, bn.z]), done: room.results.map(r => [r.id, r.time]), elapsed: Math.max(0, now - room.startAt) });
+        }
+      }
+      return;
     }
     if (m.t === 'hello') {
       if (pl) { if (!pl.room) { pl.name = cleanName(m.name); pl.look = cleanLook(m.look); if (teamIds.has(m.team) && !board[pl.pid]) pl.team = m.team; } return send(ws, { t: 'welcome', id: pl.id, team: pl.team, best: board[pl.pid] ? board[pl.pid].best : null, rank: rankOf(pl.pid) }); }
@@ -372,6 +464,9 @@ wss.on('connection', ws => {
     if (!pl) return;
     switch (m.t) {
       case 'i': onInput(pl, m); break;
+      case 'use': useItem(pl); break;
+      case 'p': if (Number.isFinite(m.c)) send(ws, { t: 'p', c: m.c }); break;          // latency probe
+      case 'net': pl.slowNet = m.low === true; break;                                    // weak connection: send this player fewer position updates
       case 'quick': {
         let room = null;
         for (const r of rooms.values()) if (r.pub && r.state === 'lobby' && r.players.length < config.roomSize) { room = r; break; }
@@ -395,24 +490,28 @@ wss.on('connection', ws => {
   ws.on('close', () => {
     clearTimeout(ws.helloTimer);
     screens.delete(ws);
+    if (ws.spec) { specCount--; if (ws.specRoom) ws.specRoom.specs.delete(ws); }
     const pl = players.get(ws);
     if (pl) { leaveRoom(pl); players.delete(ws); }
   });
   ws.on('error', () => {});
 });
 
-// Relay positions inside each room at 12 Hz.
+// Relay positions inside each room at 12 Hz (6 Hz to players on a weak connection).
+let relayN = 0, specCount = 0;
 setInterval(() => {
+  relayN++;
   for (const room of rooms.values()) {
-    if (room.state === 'lobby' || room.players.length < 2) continue;
+    if (room.state === 'lobby' || (room.players.length < 2 && !room.specs.size)) continue;
     const ps = [];
     for (const p of room.players) {
       const c = p.car; if (!c) continue;
-      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / track.N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0)]);
+      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / track.N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0) | (c.slowT > 0 ? 4 : 0) | (p.finished ? 8 : 0)]);
     }
     if (!ps.length) continue;
     const s = JSON.stringify({ t: 'S', ps });
-    for (const p of room.players) if (p.ws.readyState === 1 && p.ws.bufferedAmount < 65536) p.ws.send(s);
+    for (const p of room.players) if (p.ws.readyState === 1 && p.ws.bufferedAmount < 65536 && !(p.slowNet && relayN % 2) && room.players.length > 1) p.ws.send(s);
+    for (const ws of room.specs) if (ws.readyState === 1 && ws.bufferedAmount < 262144) ws.send(s);
   }
 }, 83);
 

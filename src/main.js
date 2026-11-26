@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { buildTrack, fmtTime } from './track-core.js';
-import { createCar, stepCar, gridPlace, padIndices, IN, EV, TICK_MS } from './physics.js';
+import { createCar, gridPlace, padIndices, IN, EV, TICK_MS } from './physics.js';
 import { buildWorld } from './world.js';
 import { makeCar } from './car.js';
 import { audio } from './audio.js';
 import { CHARS, COLORS } from './looks.js';
+import { Predictor } from './netcar.js';
+import { createItems } from './items-view.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -181,10 +183,10 @@ function bindHold(id, on, off) {
 bindHold('cLeft', () => inp.left = true, () => inp.left = false);
 bindHold('cRight', () => inp.right = true, () => inp.right = false);
 bindHold('cDrift', () => inp.drift = true, () => inp.drift = false);
-bindHold('cBrake', () => inp.brake = true, () => inp.brake = false);
 bindHold('cNitro', () => inp.nitro = true);
+bindHold('cItem', () => useItem());
 const keymap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', Shift: 'drift', ' ': 'drift', ArrowDown: 'brake', s: 'brake', S: 'brake', n: 'nitro', N: 'nitro', Control: 'nitro', ArrowUp: 'nitro' };
-addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; const k = keymap[e.key]; if (k) { inp[k] = true; e.preventDefault(); } });
+addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'e' || e.key === 'E' || e.key === 'x' || e.key === 'X') { if (!e.repeat) useItem(); return; } const k = keymap[e.key]; if (k) { inp[k] = true; e.preventDefault(); } });
 addEventListener('keyup', e => { const k = keymap[e.key]; if (k && k !== 'nitro') inp[k] = false; });
 document.addEventListener('gesturestart', e => e.preventDefault());
 addEventListener('pointerdown', () => { audio.unlock(); if (cfg.music) audio.loadTrack(cfg.music); }, { once: true });
@@ -232,7 +234,13 @@ function onMessage(m) {
       if (!race) { renderLobby(); show('sLobby'); }
       break;
     case 'start': room = m; startRace(m); break;
-    case 'S': if (race) for (const s of m.ps) { const r = race.remotes.get(s[0]); if (r) { r.tx = s[1]; r.tz = s[2]; r.th = s[3]; r.p = s[4]; r.flags = s[5]; r.seen = true; } } break;
+    case 'S': if (race) { const nowT = performance.now(); for (const s of m.ps) { const r = race.remotes.get(s[0]); if (!r) continue; const el = (nowT - (r.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { r.vx = (s[1] - r.sx) / el; r.vz = (s[2] - r.sz) / el; } r.sx = r.tx = s[1]; r.sz = r.tz = s[2]; r.at = nowT; r.th = s[3]; r.p = s[4]; r.flags = s[5]; } } break;
+    case 'ev': if (race && m.r === race.id) race.pred.onEvent(m.k, m.c); break;
+    case 'item': setItem(m.kind, m.n); break;
+    case 'box': items.takeBox(m.i, m.ms); if (m.by === me.id) audio.ready(); break;
+    case 'ban': if (m.add) items.addBanana(m.add[0], m.add[1], m.add[2]); else items.delBanana(m.del); break;
+    case 'fx': if (race && m.k === 'magnet' && m.from === me.id) flash('MAGNET!', 700, 'xs'); break;
+    case 'p': netq.onPong(m.c); break;
     case 'done': if (race) { const r = race.remotes.get(m.id); if (r) { r.done = true; r.place = m.place; } } break;
     case 'grace': if (race && !race.finished) flash('45 seconds left!', 1600, true); break;
     case 'finish':
@@ -295,12 +303,39 @@ function kickFx() {
   const b = $('cNitro'); b.classList.remove('burst'); void b.offsetWidth; b.classList.add('burst');
 }
 
+// ------------------------------------------------------------------ items + connection quality
+const items = createItems(scene, track);
+let myItem = null;
+const ITEM_ICON = { banana: '#i-banana', magnet: '#i-magnet', nitro: '#i-bolt' };
+function setItem(kind, n) {
+  myItem = kind; const b = $('cItem');
+  b.classList.toggle('hidden', !kind);
+  if (kind) { b.querySelector('use').setAttribute('href', ITEM_ICON[kind]); b.querySelector('span').textContent = n > 1 ? '×' + n : ''; }
+}
+function useItem() { if (myItem && race && !race.finished && net.ready) net.ws.send(JSON.stringify({ t: 'use' })); }
+// Latency probe every 2 s. On a weak connection we send fewer, larger input packets and ask the server for fewer
+// position updates; the player's own kart never waits for the network, so their driving stays smooth regardless.
+const netq = {
+  rtt: 0, low: false, batch: 6, sentAt: 0, waiting: false,
+  onPong(c) { const r = performance.now() - c; this.rtt = this.rtt ? this.rtt * 0.6 + r * 0.4 : r; this.waiting = false; this.judge(); },
+  judge(lost) {
+    const low = lost || this.rtt > 320 || (this.low && this.rtt > 200);
+    if (low !== this.low) { this.low = low; this.batch = low ? 12 : 6; if (net.ready) net.ws.send(JSON.stringify({ t: 'net', low })); }
+    const el = $('hNet'); el.dataset.q = lost || this.rtt > 320 ? '1' : this.rtt > 150 ? '2' : '3'; el.title = Math.round(this.rtt) + ' ms';
+  },
+};
+setInterval(() => {
+  if (!net.ready || !me.id) return;
+  if (netq.waiting) { netq.rtt = Math.max(netq.rtt, 2000); netq.judge(true); }
+  netq.waiting = true; net.ws.send(JSON.stringify({ t: 'p', c: performance.now() }));
+}, 2000);
+
 // ------------------------------------------------------------------ race
 let race = null;
 const N = track.N;
 
-function flash(text, ms = 900, small = false) {
-  const el = $('hMsg'); el.textContent = text; el.classList.toggle('sm', small);
+function flash(text, ms = 900, small = false) { // small: true = medium banner, 'xs' = small pill that never hides the road
+  const el = $('hMsg'); el.textContent = text; el.classList.toggle('sm', small === true); el.classList.toggle('xs', small === 'xs');
   clearTimeout(flash.t); if (ms) flash.t = setTimeout(() => { el.textContent = ''; }, ms);
 }
 
@@ -316,9 +351,10 @@ function startRace(m) {
     const rg = gridPlace(track, p.slot), rh = m.grid[p.id];
     const rm = carOf(p.look, p.name, p.team);
     scene.add(rm);
-    remotes.set(p.id, { mesh: rm, x: rg.x, z: rg.z, h: rh, tx: rg.x, tz: rg.z, th: rh, p: rg.lapIdx / N, flags: 0, px: rg.x, pz: rg.z, name: p.name, team: p.team });
+    remotes.set(p.id, { mesh: rm, sx: rg.x, sz: rg.z, vx: 0, vz: 0, at: 0, x: rg.x, z: rg.z, h: rh, tx: rg.x, tz: rg.z, th: rh, p: rg.lapIdx / N, flags: 0, px: rg.x, pz: rg.z, name: p.name, team: p.team });
   }
-  race = { id: m.race, over: false, car, mesh, remotes, startAt: performance.now() + m.countdown, laps: m.laps, finished: false, lastCount: 5, camH: car.h, time: 0,
+  items.reset(); setItem(null, 0);
+  race = { id: m.race, over: false, pred: new Predictor(track, pads, car, m.laps), car, mesh, remotes, startAt: performance.now() + m.countdown, laps: m.laps, finished: false, lastCount: 5, camH: car.h, time: 0,
     acc: 0, last: 0, queue: [], sent: 0, prev: { x: car.x, z: car.z, h: car.h }, myResult: null };
   $('hPosOf').textContent = '/' + m.players.length;
   $('hBest').textContent = me.best != null ? 'Best ' + fmtTime(me.best) : '';
@@ -335,7 +371,7 @@ function endRaceView() {
   flash('', 0);
   $('hWrong').classList.add('hidden');
   audio.setEngine(0, false); audio.setScreech(0); audio.setIntense(false);
-  setC(fxEl, 'boost', false); setC($('cNitro'), 'tap', false);
+  setC(fxEl, 'boost', false); setC(fxEl, 'slow', false); setC($('cNitro'), 'tap', false); setItem(null, 0);
 }
 
 function showResults(results) {
@@ -364,23 +400,29 @@ function simulate(now) {
     const bits = (inp.left ? IN.LEFT : 0) | (inp.right ? IN.RIGHT : 0) | (inp.drift ? IN.DRIFT : 0) | (inp.brake ? IN.BRAKE : 0) | (inp.nitro && !(race.jump && c.tick < 45) ? IN.NITRO : 0);
     inp.nitro = false;
     race.prev.x = c.x; race.prev.z = c.z; race.prev.h = c.h;
-    stepCar(track, pads, c, bits, race.laps);
+    race.pred.step(bits);
     race.queue.push(bits);
-    if (race.queue.length >= 6) flushInputs();
+    if (race.queue.length >= netq.batch) flushInputs();
   }
   if (c.ev) {
     const e = c.ev; c.ev = 0;
-    if (e & EV.TAP) { audio.boost(0.35); kickFx(); flash(c.tick < 60 ? 'PERFECT START!' : 'BOOST!', 650, true); }
+    if (e & EV.TAP) { audio.boost(0.35); kickFx(); flash(c.tick < 60 ? 'PERFECT START!' : 'BOOST!', 650, 'xs'); }
     if (e & EV.WINDOW) audio.beep(1320, 0.07, 0.07, 'triangle');
-    if (e & EV.STOCK) { audio.ready(); flash('NITRO READY', 900, true); const g = $('hGauge').parentElement; g.classList.remove('full'); void g.offsetWidth; g.classList.add('full'); }
+    if (e & EV.STOCK) { audio.ready(); flash('NITRO READY', 900, 'xs'); const g = $('hGauge').parentElement; g.classList.remove('full'); void g.offsetWidth; g.classList.add('full'); }
     if (e & EV.NITRO) { audio.boost(1); kickFx(); }
-    if (e & EV.SHORTCUT) { flash('SHORTCUT BOOST!', 800, true); audio.boost(0.35); kickFx(); }
+    if (e & EV.SHORTCUT) { flash('SHORTCUT BOOST!', 800, 'xs'); audio.boost(0.35); kickFx(); }
     if (e & EV.WALL) audio.beep(90, 0.12, 0.1);
     if (e & EV.PAD) audio.beep(740, 0.18);
-    if (e & EV.FINISH) { race.finished = true; race.time = c.finishMs; flash('FINISH!', 2500, true); }
-    else if (e & EV.LAP) { flash(c.lap === race.laps - 1 ? 'FINAL LAP!' : `LAP ${c.lap + 1}`, 1400, true); audio.beep(660, 0.2); }
+    if (e & EV.SLOW) { flash('SLOWED!', 700, 'xs'); audio.beep(130, 0.3, 0.12, 'sawtooth'); }
+    if (e & EV.HIT) { flash('BANANA!', 700, 'xs'); audio.beep(300, 0.12, 0.12); setTimeout(() => audio.beep(180, 0.25, 0.12), 110); }
+    if (e & EV.PULL) { audio.boost(0.45); kickFx(); }
+    if ((e & EV.LAP) && c.finishMs === null) { flash(c.lap === race.laps - 1 ? 'FINAL LAP!' : `LAP ${c.lap + 1}`, 1400, true); audio.beep(660, 0.2); }
   }
-  if (!race.finished) race.time = c.tick * TICK_MS;
+  // "finished" follows the simulation itself, so it stays right even after a rewind caused by an item
+  const fin = c.finishMs !== null;
+  if (fin && !race.finished) flash('FINISH!', 2500, true);
+  race.finished = fin;
+  race.time = fin ? c.finishMs : c.tick * TICK_MS;
 }
 function flushInputs() {
   if (!race.queue.length) return;
@@ -459,14 +501,15 @@ function frame() {
     race.mesh.userData.animate(c.vf, c.steer, lvl >= 1 ? lvl : 0, c.boostT > 0, dt, t, c.drift * -0.22);
     if (c.drift && started) skid.wheels('me', rxp, c.y, rzp, rhp); else skid.lift('me');
     audio.setScreech(c.drift ? Math.min(1, Math.abs(c.vf) / 28) : c.wall > 0.2 ? 0.35 : 0);
-    setC(fxEl, 'boost', c.boostT > 0);
+    setC(fxEl, 'boost', c.boostT > 0); setC(fxEl, 'slow', c.slowT > 0);
     setC($('cNitro'), 'tap', started && !race.finished && c.tapWin > 0 && !(race.jump && c.tick < 45));
 
     // remote cars: smooth towards last reported state
     let ahead = 0;
     const myP = c.prog / N;
     for (const r of race.remotes.values()) {
-      const k = Math.min(1, dt * 9);
+      if (r.at && now - r.at < 600) { r.tx += (r.vx || 0) * dt; r.tz += (r.vz || 0) * dt; } // keep moving between updates
+      const k = Math.min(1, dt * (netq.low ? 6 : 9));
       r.x += (r.tx - r.x) * k; r.z += (r.tz - r.z) * k; r.h += wrap(r.th - r.h) * k;
       const sp = Math.hypot(r.x - r.px, r.z - r.pz) / Math.max(dt, 1e-3); r.px = r.x; r.pz = r.z;
       const ri = ((Math.round(r.p * N) % N) + N) % N;
@@ -545,7 +588,7 @@ function frame() {
       $('lbInfo').textContent = `Starting in ${left}s · ${room.players.length}/${cfg.roomSize} karts`;
     }
   }
-  skid.update(dt);
+  skid.update(dt); items.update(t);
   world.update(focus);
   if (bloomOn) composer.render(); else renderer.render(scene, camera);
 
@@ -558,6 +601,7 @@ function frame() {
       if (bloomOn) bloomOn = false;
       else if (pixelRatio > 0.8) { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
       else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; world.sun.castShadow = false; }
+      else if (!audio.musicOff) { audio.stopMusic(); $('btnMute').classList.add('nomusic'); } // last resort on a struggling phone: free the CPU the music uses
     } else if (fps >= 40) lowCount = 0;
   }
 }
@@ -570,3 +614,5 @@ if (qs.get('room') && me.name && me.team) {
 document.addEventListener('visibilitychange', () => { if (document.hidden) audio.setEngine(0, false); });
 frame();
 if (cfg.testHooks) window.__game = { get race() { return race; }, inp, track, me }; // automated tests only (server started with TEST_HOOKS=1)
+
+$('btnPortrait').onclick = () => document.body.classList.add('allow-portrait');

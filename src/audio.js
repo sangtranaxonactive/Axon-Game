@@ -9,7 +9,7 @@ export const audio = {
   step: 0, nextT: 0, timer: null, intense: false,
 
   unlock() {
-    if (this.ctx) { this.ctx.resume(); return; }
+    if (this.ctx) { if (this.ok) this.ctx.resume(); return; }
     try {
       const C = window.AudioContext || window.webkitAudioContext;
       const ctx = this.ctx = new C();
@@ -24,7 +24,7 @@ export const audio = {
       this.noise = buf;
       // engine
       this.engine = ctx.createOscillator(); this.engine.type = 'sawtooth';
-      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1300, t + len * 0.6); lp.frequency.linearRampToValueAtTime(500, t + len);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650;
       this.engGain = ctx.createGain(); this.engGain.gain.value = 0;
       this.engine.connect(lp).connect(this.engGain).connect(this.sfx); this.engine.start();
       // tyre screech: band-passed noise, always running, gain opened while drifting
@@ -36,37 +36,40 @@ export const audio = {
       this.screechBP = bp;
       this.nextT = ctx.currentTime + 0.1;
       this.timer = setInterval(() => this.schedule(), 40);
-    } catch { /* no audio available */ }
+      this.ok = true;
+    } catch (e) { console.warn('audio unavailable:', e && e.message); this.ok = false; }
   },
-  setMuted(m) { this.muted = m; if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.05); },
+  // Music is generated on the device (no download, no network traffic); it only costs a little CPU.
+  stopMusic() { this.musicOff = true; clearInterval(this.timer); this.timer = null; if (this.ok) this.music.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2); },
+  setMuted(m) { this.muted = m; if (this.ok) this.master.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.05); },
   // menu = filtered & quiet, race = full power
   setIntense(on) {
-    this.intense = on; if (!this.ctx) return;
+    this.intense = on; if (!this.ok) return;
     const t = this.ctx.currentTime;
     this.musicLP.frequency.setTargetAtTime(16000, t, 0.25); // no more muffling filter in the menus, just quieter
-    this.music.gain.setTargetAtTime(on ? 0.62 : 0.4, t, 0.25);
+    if (!this.musicOff) this.music.gain.setTargetAtTime(on ? 0.85 : 0.42, t, 0.25);
   },
   setEngine(speed, on) {
-    if (!this.ctx) return;
+    if (!this.ok) return;
     const t = this.ctx.currentTime;
     this.engine.frequency.setTargetAtTime(52 + Math.abs(speed) * 3.6, t, 0.05);
     this.engGain.gain.setTargetAtTime(on ? 0.028 : 0, t, 0.08);
   },
   setScreech(amount) { // 0..1
-    if (!this.ctx) return;
+    if (!this.ok) return;
     const t = this.ctx.currentTime;
     this.screechGain.gain.setTargetAtTime(amount * 0.11, t, 0.04);
     this.screechBP.frequency.setTargetAtTime(1700 + amount * 900, t, 0.1);
   },
   beep(freq, dur = 0.15, vol = 0.12, type = 'square') {
-    if (!this.ctx) return;
+    if (!this.ok) return;
     const o = this.ctx.createOscillator(), g = this.ctx.createGain(), t = this.ctx.currentTime;
     o.type = type; o.frequency.value = freq;
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g).connect(this.sfx); o.start(t); o.stop(t + dur);
   },
   boost(power = 1) { // rising whoosh + sub thump
-    if (!this.ctx) return;
+    if (!this.ok) return;
     const ctx = this.ctx, t = ctx.currentTime, dur = 0.35 + power * 0.7;
     const n = ctx.createBufferSource(); n.buffer = this.noise;
     const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
@@ -103,9 +106,9 @@ export const audio = {
   kick(t) {
     const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
     o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.09);
-    g.gain.setValueAtTime(1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    o.connect(g).connect(this.music); o.start(t); o.stop(t + 0.22);
-    this.noiseHit(t, 0.012, 3500, 'highpass', 0.25);
+    g.gain.setValueAtTime(1.35, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
+    o.connect(g).connect(this.music); o.start(t); o.stop(t + 0.28);
+    this.noiseHit(t, 0.014, 3000, 'highpass', 0.4);
   },
   noiseHit(t, dur, freq, type, vol, wet = 0, q = 0.7) {
     const ctx = this.ctx, n = ctx.createBufferSource(); n.buffer = this.noise;
@@ -117,7 +120,7 @@ export const audio = {
   },
   clap(t) { // three quick slaps + a tail, sent to the room
     for (const d of [0, 0.011, 0.023]) this.noiseHit(t + d, 0.03, 1500, 'bandpass', 0.5, 0, 1.2);
-    this.noiseHit(t + 0.03, 0.2, 1700, 'bandpass', 0.45, 0.6, 0.9);
+    this.noiseHit(t + 0.03, 0.24, 1700, 'bandpass', 0.62, 0.7, 0.9); this.noiseHit(t, 0.1, 240, 'lowpass', 0.5);
     this.noiseHit(t, 0.12, 5200, 'highpass', 0.16);
   },
   keys(t, note, len, vol) { // felt-piano tone: decaying harmonic partials, soft hammer noise, reverb
@@ -139,7 +142,7 @@ export const audio = {
   },
   async loadTrack(url) { // optional: a real beat file set as "music" in config.json replaces the synthesised one
     try {
-      if (!this.ctx || this.track) return;
+      if (!this.ok || this.track) return;
       this.track = true;
       const buf = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer());
       clearInterval(this.timer); this.timer = null;
@@ -148,7 +151,7 @@ export const audio = {
   },
   schedule() {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!this.ok || ctx.state !== 'running') return;
     this.fx();
     if (this.nextT < ctx.currentTime) this.nextT = ctx.currentTime + 0.05; // tab was asleep
     while (this.nextT < ctx.currentTime + 0.2) { this.playStep(this.step, this.nextT); this.step++; this.nextT += STEP; }
@@ -180,7 +183,11 @@ export const audio = {
       [61, X, X, 65, X, X, 61, X, 63, X, X, 61, X, X, 60, X],
       [60, X, X, 64, X, X, 67, X, 70, X, 68, X, 67, X, 64, X],
     ][bar][q];
-    if (lead != null) { this.keys(t, lead, 0.9, 0.16); if (q === 0) this.keys(t, lead - 12, 1.4, 0.13); }
+    if (lead != null) { this.keys(t, lead, 0.9, 0.16); if (q === 0) this.keys(t, lead - 12, 1.4, 0.13); if (section >= 2) this.keys(t, lead + 12, 0.5, 0.07); }
+    if (q === 0 && bar === 0 && full) { this.noiseHit(t, 1.4, 6000, 'highpass', 0.16, 0.6); this.kick(t); }                       // crash on every phrase
+    if (section === 0 && bar === 3 && q >= 8) this.noiseHit(t, 0.06, 2000, 'bandpass', 0.12 + (q - 8) * 0.04, 0.3);              // snare roll into the drop
+    if (section === 0 && bar === 3 && q >= 12) this.noiseHit(t + STEP / 2, 0.05, 2000, 'bandpass', 0.2 + (q - 12) * 0.05, 0.3);
+    if (full && (q === 6 || q === 14) && bar % 2 === 1) this.kick(t);                                                              // extra kicks drive the second half of each pair of bars
     if (q === 0) this.strings(t, [[41, 53, 56, 60], [41, 53, 56, 61], [37, 49, 53, 56], [36, 48, 52, 55]][bar], STEP * 16);
     if (q === 0 && bar === 0 && section === 1) { this.noiseHit(t, 1.2, 4000, 'highpass', 0.1, 0.5); this.keys(t, 29 + 24, 2, 0.2); } // the drop
   },

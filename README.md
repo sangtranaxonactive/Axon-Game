@@ -58,6 +58,18 @@ Kết quả đo ngày 2026-11-24 (máy sandbox, sau bản cập nhật 2): 450 k
 
 Thêm đường tắt cho map khác: `node tools/suggest-shortcuts.mjs <map>` gợi ý các cặp điểm, chép vào `"shortcuts": [[from, to, 4.4]]` trong file map.
 
+## Bản cập nhật 11: chướng ngại, vật phẩm, trang bình luận viên
+
+- **Vạch SLOW** (đỏ trắng): chạm vào là xe bò khoảng 2 giây. Vị trí: `"slowZones": [[vị trí trên vòng 0–1, lệch ngang (m)]]` trong file map.
+- **Hộp may mắn màu cam**: `"itemBoxes"` trong file map; có lại sau `boxRespawnMs` (3000 ms). Mỗi hộp cho ngẫu nhiên: 2 vỏ chuối (thả phía sau),
+  nam châm (làm chậm người ngay phía trước ~3 giây, mình được kéo nhẹ) hoặc 1 lần phóng nitro. Dùng bằng nút cam trên màn hình hoặc phím E.
+- Mọi vật phẩm do **máy chủ quyết định** (ai nhặt, trúng ai); máy khách chỉ nhận hiệu ứng tại một tick xác định và tua lại nếu cần (`src/netcar.js`),
+  nên thời gian chính thức vẫn khớp tuyệt đối. `tools/loadtest.js` cho bot dùng vật phẩm; `timeMismatches` và `tooLateToRewind` phải bằng 0.
+- **Trang bình luận viên / ban tổ chức**: `/live`, cần mã `HOST_CODE` (biến môi trường, hoặc `hostCode` trong `config.json`; chưa đặt thì server in mã tạm khi khởi động).
+  Chọn phòng → camera bám sau/trên tay đua, có tên trên đầu xe. Bấm tên hoặc phím 1–8 để đổi người, kéo chuột để xoay, lăn chuột để zoom, `H` ẩn bảng cho khung hình sạch.
+  Để livestream: chia sẻ cửa sổ trình duyệt này qua OBS / Teams / Zoom. Trang này chỉ nhận dữ liệu, không lái xe hay dùng vật phẩm được.
+- **Mobile**: nhắc xoay ngang, bỏ nút phanh, HUD gọn hơn, nút bấm cỡ ngón tay. Có vạch sóng mạng trên HUD; mạng yếu thì gửi/nhận thưa hơn.
+
 ## Công bằng & chống gian lận
 
 - Trình duyệt **chỉ gửi nút bấm** (trái/phải/drift/phanh/nitro, 60 lần/giây). Server tự lái lại chiếc xe bằng đúng bộ vật lý

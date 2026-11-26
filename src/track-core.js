@@ -56,7 +56,11 @@ export function buildTrack(map) {
     const dx = b.x - a.x, dz = b.z - a.z, len = Math.sqrt(dx * dx + dz * dz);
     return { from, to, span: to - from, ax: a.x, az: a.z, bx: b.x, bz: b.z, ux: dx / len, uz: dz / len, len, hw: (w || 4.4) / 2, ya: a.y, yb: b.y };
   }).filter(q => q.span > 0 && q.len > 1);
-  return { samples, N, step, length, width: map.width || 14, half: (map.width || 14) / 2, shortcuts };
+  // Hazards and pick-ups, all positioned as [fraction of the lap, lateral offset from the centre line, ...]
+  const at = f => Math.floor(f * N) % N;
+  const slowZones = (map.slowZones || []).map(([f, lat, hw, len]) => ({ idx: at(f), lat: lat || 0, hw: hw || 2.3, len: len || 2 }));
+  const itemBoxes = (map.itemBoxes || []).map(([f, lat]) => { const i = at(f), s = samples[i]; return { idx: i, lat: lat || 0, x: s.x + s.nx * (lat || 0), y: s.y, z: s.z + s.nz * (lat || 0) }; });
+  return { samples, N, step, length, width: map.width || 14, half: (map.width || 14) / 2, shortcuts, slowZones, itemBoxes };
 }
 
 // Find nearest sample index near a hint (local search keeps crossings unambiguous).

@@ -7,7 +7,10 @@ export const TICK_MS = 1000 / 60;
 const DT = 1 / 60;
 export const V_MAX = 35, V_BOOST = 47;
 export const IN = { LEFT: 1, RIGHT: 2, DRIFT: 4, BRAKE: 8, NITRO: 16 };
-export const EV = { WINDOW: 1, TAP: 2, STOCK: 4, NITRO: 8, WALL: 16, PAD: 32, LAP: 64, FINISH: 128, SHORTCUT: 256 };
+export const EV = { WINDOW: 1, TAP: 2, STOCK: 4, NITRO: 8, WALL: 16, PAD: 32, LAP: 64, FINISH: 128, SHORTCUT: 256, SLOW: 512, HIT: 1024, PULL: 2048 };
+// Effects the server injects into a kart at an agreed tick (items). Both sides apply them with applyEvent().
+export const FX = { NITRO: 1, BANANA: 2, MAGNET: 3, PULL: 4 };
+export const SLOW_STRIP_TICKS = 120, V_SLOW = 16;
 export const START_WINDOW = 36, DRIFT_WINDOW = 60; // ticks during which a well-timed NITRO tap gives a free mini boost
 
 const PI = 3.141592653589793, TAU = 6.283185307179586, HALF_PI = 1.5707963267948966;
@@ -43,8 +46,16 @@ export function createCar(track, slot, heading) {
     x: g.x, z: g.z, y: 0, h: heading, vx: 0, vz: 0, idx: g.idx, lapIdx: g.lapIdx, prog: g.lapIdx, prevProg: g.lapIdx,
     steer: 0, drift: 0, charge: 0, gauge: 0, stock: 0, boostT: 0, wall: 0, vf: 0, wrong: false,
     lap: 0, tick: 0, finishMs: null, ev: 0,
-    tapWin: START_WINDOW, tapPow: 0.4, sc: -1, scBase: 0, scCool: 0,
+    tapWin: START_WINDOW, tapPow: 0.4, sc: -1, scBase: 0, scCool: 0, slowT: 0,
   };
+}
+
+export function applyEvent(c, code) {
+  if (c.finishMs !== null) return;
+  if (code === FX.NITRO) { c.boostT = 2.6; c.ev |= EV.NITRO; }
+  else if (code === FX.BANANA) { c.vx *= 0.3; c.vz *= 0.3; if (c.slowT < 80) c.slowT = 80; c.drift = 0; c.charge = 0; c.boostT = 0; c.ev |= EV.HIT; }
+  else if (code === FX.MAGNET) { if (c.slowT < 180) c.slowT = 180; c.boostT = 0; c.ev |= EV.SLOW; }
+  else if (code === FX.PULL) { if (c.boostT < 0.9) c.boostT = 0.9; c.ev |= EV.PULL; }
 }
 
 export function stepCar(track, pads, c, bits, laps) {
@@ -87,11 +98,13 @@ export function stepCar(track, pads, c, bits, laps) {
   // velocity in the new car frame: forward + lateral (lateral bleeds off = grip)
   const fx = dsin(c.h), fz = dcos(c.h), rx = -fz, rz = fx;
   let vf = c.vx * fx + c.vz * fz, vl = c.vx * rx + c.vz * rz;
-  const maxV = boosting ? V_BOOST : V_MAX;
+  const slowed = c.slowT > 0;
+  if (slowed) c.slowT--;
+  const maxV = slowed ? (boosting ? 30 : V_SLOW) : boosting ? V_BOOST : V_MAX;
   if (!active) vf -= vf * 0.025;
   else if (bits & IN.BRAKE) { vf -= 34 * DT; if (vf < -7) vf = -7; }
   else if (vf < maxV) { vf += (boosting ? 42 : 13 + (1 - vf / maxV) * 12) * DT; if (vf > maxV) vf = maxV; }
-  else vf -= (vf - maxV) * 1.6 * DT;
+  else vf -= (vf - maxV) * (slowed ? 5 : 1.6) * DT;
   vl *= c.drift ? GRIP_DRIFT : GRIP;
   c.vx = fx * vf + rx * vl; c.vz = fz * vf + rz * vl;
   c.x += c.vx * DT; c.z += c.vz * DT;
@@ -180,6 +193,13 @@ export function stepCar(track, pads, c, bits, laps) {
     for (let k = 0; k < pads.length; k++) {
       let pd = c.idx - pads[k]; if (pd > N / 2) pd -= N; else if (pd < -N / 2) pd += N;
       if (pd >= -2 && pd <= 2 && lat < 3.8 && lat > -3.8 && c.boostT < 0.9) { c.boostT = 1.0; c.ev |= EV.PAD; }
+    }
+    // slow strips: touch one and the kart crawls for two seconds
+    const zones = track.slowZones;
+    for (let k = 0; k < zones.length; k++) {
+      const zn = zones[k];
+      let pd = c.idx - zn.idx; if (pd > N / 2) pd -= N; else if (pd < -N / 2) pd += N;
+      if (pd >= -zn.len && pd <= zn.len && lat - zn.lat < zn.hw && lat - zn.lat > -zn.hw && c.slowT < SLOW_STRIP_TICKS - 30) { c.slowT = SLOW_STRIP_TICKS; c.boostT = 0; c.ev |= EV.SLOW; }
     }
     c.y = s.y; c.vf = vf;
     c.wrong = vf > 4 && (fx * s.tx + fz * s.tz) < -0.3;

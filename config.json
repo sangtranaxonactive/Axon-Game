@@ -47,5 +47,7 @@
     "RESPECT",
     "FOCUS",
     "COMMITMENT"
-  ]
+  ],
+  "hostCode": "change-me",
+  "boxRespawnMs": 3000
 }
