@@ -1,6 +1,7 @@
 // Renders the things racers interact with: orange lucky boxes and dropped banana peels. Used by the game and the live view.
 import * as THREE from 'three';
 import { canvasTex } from './world.js';
+import { nearestIndexGlobal } from './track-core.js';
 
 export function createItems(scene, track) {
   const tex = canvasTex(128, 128, (g, w, h) => {
@@ -39,7 +40,7 @@ export function createItems(scene, track) {
     },
     addBanana(id, x, z) {
       if (bananas.has(id)) return;
-      const g = new THREE.Group(); g.position.set(x, 0.55, z); g.rotation.y = id * 1.7;
+      const g = new THREE.Group(); g.position.set(x, track.samples[nearestIndexGlobal(track, x, z)].y + 0.55, z); g.rotation.y = id * 1.7;
       const p = new THREE.Mesh(peelGeo, peelMat); p.rotation.x = Math.PI / 2; g.add(p);
       const tip = new THREE.Mesh(tipGeo, tipMat); tip.position.set(0.75, 0, 0); g.add(tip);
       scene.add(g); bananas.set(id, g);

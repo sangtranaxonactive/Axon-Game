@@ -94,7 +94,7 @@
     <div class="logo"><svg viewBox="0 0 96 96" aria-hidden="true"><use href="#i-mark"/></svg><h1 id="evName2">YEP RACING</h1></div>
     <p class="prize" id="evPrize"></p>
     <div class="me"><span id="meDot"></span><b id="meName"></b><a id="btnEdit">edit</a></div>
-    <div class="mybest">Your best: <b id="meBest">--</b> <span id="meRank"></span></div>
+    <div class="mybest" id="meBest"></div>
     <button id="btnFullHome" class="btn full">⛶ FULL SCREEN</button>
     <button id="btnQuick" class="btn primary big"><svg class="ic" viewBox="0 0 64 64"><use href="#i-flag"/></svg>RACE NOW</button>
     <div class="row">
@@ -109,6 +109,7 @@
   <section id="sLobby" class="panel hidden">
     <h2 id="lbTitle">LOBBY</h2>
     <div class="code" id="lbCode"></div>
+    <div class="maprow"><span>MAP</span><b id="lbMap"></b><button id="btnMap" class="btn hidden">CHANGE</button></div>
     <ul id="lbPlayers" class="plist"></ul>
     <p id="lbInfo" class="sub"></p>
     <button id="btnGo" class="btn primary hidden">START RACE</button>
@@ -146,6 +147,7 @@
 
   <section id="sBoard" class="panel hidden">
     <h2>LEADERBOARD</h2>
+    <div id="bdMaps" class="chips3"></div>
     <div class="tabs"><button id="tabSolo" class="on">Players</button><button id="tabTeam">Teams</button></div>
     <ol id="bdList" class="rlist tall"></ol>
     <button id="btnBack" class="btn ghost">CLOSE</button>

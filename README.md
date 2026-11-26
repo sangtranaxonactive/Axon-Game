@@ -70,6 +70,14 @@ Thêm đường tắt cho map khác: `node tools/suggest-shortcuts.mjs <map>` g�
   Để livestream: chia sẻ cửa sổ trình duyệt này qua OBS / Teams / Zoom. Trang này chỉ nhận dữ liệu, không lái xe hay dùng vật phẩm được.
 - **Mobile**: nhắc xoay ngang, bỏ nút phanh, HUD gọn hơn, nút bấm cỡ ngón tay. Có vạch sóng mạng trên HUD; mạng yếu thì gửi/nhận thưa hơn.
 
+## Nhiều map (bản 17)
+
+- `"maps"` trong `config.json` liệt kê các map đang dùng (mặc định `company`, `arena`, `coast`). "Race now" luân phiên qua các map; trong phòng riêng, chủ phòng bấm **CHANGE** để chọn.
+- Mỗi map có **bảng xếp hạng riêng** (cá nhân và đội). Màn hình lớn tự luân phiên 14 giây một map; `/screen?map=coast` để ghim một map, `?rotate=20` để đổi chu kỳ.
+- `arena` (Night Circuit, 1496 m): đường đêm nhanh, cua rộng. `coast` (Sunset Coast, 1696 m): đảo cát lúc hoàng hôn, có đoạn **cầu vượt dốc lên xuống**.
+- Thêm map: tạo `public/maps/<tên>.json` (điểm đường có thể là `[x, y, z]` để có độ cao), chạy `node tools/checkmap.mjs <tên>`, rồi thêm tên vào `"maps"`.
+- Chỉ muốn một map cho ngày tiệc: để `"maps": ["company"]`.
+
 ## Kiểm tra đang chạy bản nào
 
 Góc dưới trái màn hình game có số bản (ví dụ `v16-3fa9c1`), dòng khởi động của server và `/api/version` cũng in ra số đó.

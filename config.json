@@ -49,5 +49,10 @@
     "COMMITMENT"
   ],
   "hostCode": "change-me",
-  "boxRespawnMs": 3000
+  "boxRespawnMs": 3000,
+  "maps": [
+    "company",
+    "arena",
+    "coast"
+  ]
 }

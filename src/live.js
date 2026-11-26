@@ -1,18 +1,17 @@
 // Commentator / organiser view. A different page, bundle and server channel from the racers' game:
 // it needs the host code, only ever receives data (it cannot drive or use items), and racers cannot open it from a race.
 import * as THREE from 'three';
-import { buildTrack, fmtTime } from './track-core.js';
+import { fmtTime } from './track-core.js';
 import { gridPlace } from './physics.js';
-import { buildWorld } from './world.js';
+import { createStage } from './stage.js';
 import { makeCar } from './car.js';
 import { COLORS } from './looks.js';
-import { createItems } from './items-view.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cfg = await (await fetch('/api/config')).json();
-const map = await (await fetch(`/maps/${String(cfg.map).replace(/[^\w-]/g, '')}.json`)).json();
-const track = buildTrack(map), N = track.N;
+let track, N, world, items, minX, maxX, minZ, maxZ;
+const mapNames = Object.fromEntries(cfg.maps.map(x => [x.id, x.name]));
 const teamColor = Object.fromEntries(cfg.teams.map(t => [t.id, t.color]));
 $('evName').textContent = cfg.eventName; document.title = cfg.eventName + ' — Live';
 
@@ -23,8 +22,13 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(55, 1, 0.3, 2500);
 function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
-const world = await buildWorld(scene, renderer, track, map, cfg);
-const items = createItems(scene, track);
+const stage = createStage(scene, renderer, cfg);
+function use(s) {
+  ({ track, world, items } = s); N = track.N;
+  minX = Infinity; maxX = -Infinity; minZ = Infinity; maxZ = -Infinity;
+  for (const p of track.samples) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z); }
+}
+use(await stage.load(cfg.map));
 $('loading').remove();
 
 // ---------------------------------------------------------------- screens
@@ -48,7 +52,7 @@ function openRooms() { roomCode = null; clearCars(); show('sRooms'); send({ t: '
 $('bRooms').onclick = $('btnBackRooms').onclick = $('btnEndRooms').onclick = openRooms;
 function renderRooms(list) {
   const label = { lobby: 'WAITING', countdown: 'STARTING', racing: 'RACING' };
-  $('roomList').innerHTML = list.map(r => `<button data-c="${esc(r.code)}"><span class="st">${label[r.state] || ''}</span><b>${r.pub ? 'QUICK' : esc(r.code)}</b>${r.names.map(esc).join(', ') || 'empty'}</button>`).join('')
+  $('roomList').innerHTML = list.map(r => `<button data-c="${esc(r.code)}"><span class="st">${label[r.state] || ''}</span><b>${r.pub ? 'QUICK' : esc(r.code)}</b>${esc(mapNames[r.map] || '')} — ${r.names.map(esc).join(', ') || 'empty'}</button>`).join('')
     || '<p class="sub">No races right now. Waiting for racers…</p>';
 }
 $('roomList').onclick = e => { const b = e.target.closest('button'); if (b) { roomCode = b.dataset.c; send({ t: 'spec', room: roomCode }); } };
@@ -56,8 +60,10 @@ $('roomList').onclick = e => { const b = e.target.closest('button'); if (b) { ro
 // ---------------------------------------------------------------- race state
 let race = null; const cars = new Map();
 function clearCars() { for (const c of cars.values()) scene.remove(c.mesh); cars.clear(); race = null; $('board').innerHTML = ''; $('big').textContent = ''; }
-function startRace(m) {
+async function startRace(m) {
   clearCars();
+  const t0 = performance.now();
+  use(await stage.load(m.map)); // each room has its own map
   for (const p of m.players) {
     const g = gridPlace(track, p.slot), h = m.grid[p.id] ?? g.heading;
     const mesh = makeCar(COLORS[p.look?.[2]] || COLORS[0], p.name, { char: p.look?.[0] | 0, charColor: COLORS[p.look?.[1]] || COLORS[0], tag: teamColor[p.team] });
@@ -65,10 +71,10 @@ function startRace(m) {
     scene.add(mesh);
     cars.set(p.id, { id: p.id, name: p.name, team: p.team, mesh, x: g.x, z: g.z, h, tx: g.x, tz: g.z, th: h, sx: g.x, sz: g.z, vx: 0, vz: 0, at: 0, p: g.lapIdx / N, flags: 0, px: g.x, pz: g.z, place: 0 });
   }
-  race = { ended: false, startAt: performance.now() + m.countdown - (m.elapsed || 0), laps: m.laps, last: 9, places: 0, code: m.code, pub: m.pub };
+  race = { ended: false, startAt: t0 + m.countdown - (m.elapsed || 0), laps: m.laps, last: 9, places: 0, code: m.code, pub: m.pub };
   for (const [id, time] of m.done || []) { const c = cars.get(id); if (c) { c.place = ++race.places; c.time = time; } }
   items.reset(m.boxes, m.bananas);
-  $('roomTag').textContent = m.pub ? 'QUICK RACE' : 'ROOM ' + m.code;
+  $('roomTag').textContent = (m.pub ? 'QUICK RACE' : 'ROOM ' + m.code) + ' · ' + (mapNames[m.map] || '').toUpperCase();
   if (!cars.has(follow)) follow = m.players[0]?.id ?? null;
   show(null); renderBoard(true);
 }
@@ -77,7 +83,7 @@ function onMessage(m) {
     case 'err': toast(m.msg); break;
     case 'watching': watching = true; sessionStorage.setItem('hostCode', code); if (roomCode) send({ t: 'spec', room: roomCode }); else { renderRooms(m.rooms); openRooms(); } break;
     case 'rooms': renderRooms(m.rooms); break;
-    case 'room': if (m.state === 'lobby' && roomCode) { clearCars(); $('waitTitle').textContent = (m.pub ? 'QUICK RACE' : 'ROOM ' + m.code) + ' — WAITING'; $('waitList').innerHTML = m.players.map(p => `<li><i style="background:${esc(teamColor[p.team] || '#888')}"></i>${esc(p.name)}</li>`).join(''); show('sWait'); } break;
+    case 'room': if (m.state === 'lobby' && roomCode) { clearCars(); stage.load(m.map).then(use); $('waitTitle').textContent = (m.pub ? 'QUICK RACE' : 'ROOM ' + m.code) + ' — WAITING'; $('waitList').innerHTML = m.players.map(p => `<li><i style="background:${esc(teamColor[p.team] || '#888')}"></i>${esc(p.name)}</li>`).join(''); show('sWait'); } break;
     case 'start': startRace(m); break;
     case 'S': { const nowT = performance.now(); for (const s of m.ps) { const c = cars.get(s[0]); if (!c) continue; const el = (nowT - (c.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { c.vx = (s[1] - c.sx) / el; c.vz = (s[2] - c.sz) / el; } c.sx = c.tx = s[1]; c.sz = c.tz = s[2]; c.at = nowT; c.th = s[3]; c.p = s[4]; c.flags = s[5]; } break; }
     case 'done': { const c = cars.get(m.id); if (c && race) { c.place = m.place; c.time = m.time; } break; }
@@ -119,8 +125,6 @@ gl.addEventListener('dblclick', () => { yaw = pitch = 0; zoom = 1; });
 const clock = new THREE.Clock(), look = new THREE.Vector3(), want = new THREE.Vector3(), focus = new THREE.Vector3();
 const wrap = a => { a = (a + Math.PI) % (Math.PI * 2); return a < 0 ? a + Math.PI : a - Math.PI; };
 let camH = 0, tick = 0; const ST = { spin: -1, air: -1 };
-let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-for (const s of track.samples) { minX = Math.min(minX, s.x); maxX = Math.max(maxX, s.x); minZ = Math.min(minZ, s.z); maxZ = Math.max(maxZ, s.z); }
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05), now = performance.now(), t = now / 1000; tick++;
@@ -130,7 +134,7 @@ function frame() {
       const k = Math.min(1, dt * 8);
       c.x += (c.tx - c.x) * k; c.z += (c.tz - c.z) * k; c.h += wrap(c.th - c.h) * k;
       const sp = Math.hypot(c.x - c.px, c.z - c.pz) / Math.max(dt, 1e-3); c.px = c.x; c.pz = c.z;
-      c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.h;
+      c.mesh.position.set(c.x, track.samples[((Math.round(c.p * N) % N) + N) % N].y, c.z); c.mesh.rotation.y = c.h;
       c.spinPh = c.flags & 16 ? Math.min(1, (c.spinPh || 0) + dt / 2) : 0; c.airPh = c.flags & 32 ? Math.min(1, (c.airPh || 0) + dt / 2) : 0;
       ST.spin = c.flags & 16 ? c.spinPh : -1; ST.air = c.flags & 32 ? c.airPh : -1;
       c.mesh.userData.animate(sp, 0, c.flags & 1 ? 1 : 0, !!(c.flags & 2), dt, t, 0, ST);
@@ -146,9 +150,10 @@ function frame() {
       // behind and above the racer so the road ahead and the karts around them stay in frame
       const P = { chase: [10, 5.2, 9, 58], high: [22, 17, 14, 55], top: [3, 55, 10, 50], front: [-11, 4, 0, 50] }[mode];
       const a = camH + yaw, d = P[0] * zoom, hgt = Math.max(1.5, P[1] * zoom + pitch * 30);
-      want.set(f.x - Math.sin(a) * d, hgt, f.z - Math.cos(a) * d);
+      const fy = f.mesh.position.y;
+      want.set(f.x - Math.sin(a) * d, fy + hgt, f.z - Math.cos(a) * d);
       camera.position.lerp(want, Math.min(1, dt * 6));
-      look.set(f.x + Math.sin(camH) * P[2], 1.2, f.z + Math.cos(camH) * P[2]);
+      look.set(f.x + Math.sin(camH) * P[2], fy + 1.2, f.z + Math.cos(camH) * P[2]);
       camera.fov += (P[3] - camera.fov) * 0.1; camera.updateProjectionMatrix();
       camera.lookAt(look); focus.set(f.x, 0, f.z);
     }

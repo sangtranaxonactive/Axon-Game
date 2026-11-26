@@ -72,6 +72,6 @@ async function startedRace(pid) {
 
   const lb = await (await fetch(BASE + '/api/leaderboard')).json().catch(() => null);
   check('server still alive after all probes', !!lb);
-  check('no cheater on the leaderboard', lb && !lb.top.some(e => e.name === 'Cheater'));
+  check('no cheater on any leaderboard', lb && Object.values(lb.maps).every(b => !b.top.some(e => e.name === 'Cheater')));
   console.log(fails ? `\n${fails} FAILED` : '\nALL PASS'); process.exit(fails ? 1 : 0);
 })();

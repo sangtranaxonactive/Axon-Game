@@ -3,8 +3,13 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const qs = new URLSearchParams(location.search);
 const cfg = await (await fetch('/api/config')).json();
-const map = await (await fetch(`/maps/${cfg.map}.json`)).json();
-const track = buildTrack(map);
+// One leaderboard per map. The screen rotates through them (or stays on ?map=<id>).
+const tracks = {};
+for (const { id } of cfg.maps) tracks[id] = buildTrack(await (await fetch(`/maps/${id}.json`)).json());
+const fixed = cfg.maps.some(x => x.id === qs.get('map')) ? qs.get('map') : null;
+let cur = fixed || cfg.maps[0].id, track = tracks[cur], lastBoard = null;
+function showMap(id) { cur = id; track = tracks[id]; layout(); shown.clear(); $('mapName').textContent = (cfg.maps.find(x => x.id === id) || {}).name || id; if (lastBoard) renderBoard(lastBoard, true); }
+if (!fixed && cfg.maps.length > 1) setInterval(() => showMap(cfg.maps[(cfg.maps.findIndex(x => x.id === cur) + 1) % cfg.maps.length].id), Number(qs.get('rotate')) * 1000 || 14000);
 const teamColor = Object.fromEntries(cfg.teams.map(t => [t.id, t.color]));
 $('title').textContent = cfg.eventName; $('prize').textContent = cfg.prize || ''; document.title = cfg.eventName + ' — Big Screen';
 $('teamRule').textContent = `· average of each team's ${cfg.teamTopN} best times`;
@@ -14,9 +19,11 @@ $('qr').src = '/api/qr.svg?u=' + encodeURIComponent(joinUrl);
 $('url').textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 const ROWS = Number(qs.get('rows')) || 10;
 
-function renderBoard(m) {
+function renderBoard(all, quiet) {
+  lastBoard = all;
+  const m = { ...(all.maps[cur] || { top: [], total: 0, teams: [] }), recent: all.recent, record: quiet ? null : all.record };
   $('sTotal').textContent = m.total;
-  const prev = new Map([...$('top').children].map((li, i) => [li.dataset.k, i]));
+  const prev = quiet ? new Map() : new Map([...$('top').children].map((li, i) => [li.dataset.k, i]));
   $('top').innerHTML = m.top.slice(0, ROWS).map((e, i) => {
     const k = e.name + '|' + e.team + '|' + e.best;
     return `<li data-k="${esc(k)}" class="${prev.size && !prev.has(k) ? 'flash' : ''}"><span class="n">${i + 1}</span><i style="background:${esc(teamColor[e.team] || '#888')}"></i><span class="nm">${esc(e.name)}</span><span class="tm">${fmtTime(e.best)}</span></li>`;
@@ -25,7 +32,7 @@ function renderBoard(m) {
   $('teams').innerHTML = m.teams.map((t, i) => `<li><span class="n">${i + 1}</span><i style="background:${esc(t.color)}"></i><span class="nm">${esc(t.name)} <span class="sm">${t.counted}/${cfg.teamTopN} counted · ${t.members} racers</span></span><span class="tm">${t.avg != null ? fmtTime(t.avg) : '—'}</span></li>`).join('');
   $('feed').innerHTML = m.recent.slice(0, 6).map(r => `<li><i style="background:${esc(teamColor[r.team] || '#888')}"></i><span class="nm">${esc(r.name)} ${r.record ? '🏆' : r.pb ? '★' : ''}</span><span class="tm">${fmtTime(r.time)}</span></li>`).join('') || '<div class="empty">Waiting for racers…</div>';
   if (m.record) {
-    $('rWho').textContent = m.record.name; $('rTime').textContent = fmtTime(m.record.time);
+    $('rWho').textContent = m.record.name; $('rTime').textContent = fmtTime(m.record.time); $('rMap').textContent = ((cfg.maps.find(x => x.id === m.record.map) || {}).name || '').toUpperCase();
     $('record').classList.add('on'); setTimeout(() => $('record').classList.remove('on'), 6000);
   }
 }
@@ -42,7 +49,7 @@ function layout() {
   const ox = (cv.width - (maxX - minX) * sc) / 2, oz = (cv.height - (maxZ - minZ) * sc) / 2;
   fit = { x: x => cv.width - (ox + (x - minX) * sc), z: z => oz + (z - minZ) * sc, sc, dpr };
 }
-addEventListener('resize', layout); layout();
+addEventListener('resize', layout); layout(); showMap(cur);
 function draw() {
   requestAnimationFrame(draw);
   g.clearRect(0, 0, cv.width, cv.height);
@@ -55,7 +62,8 @@ function draw() {
   g.setLineDash([]);
   const s0 = track.samples[0]; g.fillStyle = '#35c8f5'; g.beginPath(); g.arc(fit.x(s0.x), fit.z(s0.z), 5 * fit.dpr, 0, 7); g.fill();
   const seen = new Set();
-  for (const [id, x, z, team] of cars) {
+  for (const [id, x, z, team, mi] of cars) {
+    if (cfg.maps[mi] && cfg.maps[mi].id !== cur) continue;
     seen.add(id);
     let p = shown.get(id); if (!p) shown.set(id, p = { x, z });
     p.x += (x - p.x) * 0.15; p.z += (z - p.z) * 0.15;

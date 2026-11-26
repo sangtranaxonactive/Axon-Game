@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { buildOffice } from './office.js';
 import { buildArena } from './arena.js';
 import { buildCompany } from './company.js';
+import { buildCoast } from './coast.js';
 import { roadClearance } from './track-core.js';
 
 function rng(seed) {
@@ -62,7 +63,7 @@ export async function buildWorld(scene, renderer, track, map, cfg) {
 
   // --- lighting: image-based reflections + hemisphere + shadow-casting sun
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; pmrem.dispose();
   scene.environmentIntensity = 0.55;
   scene.add(new THREE.HemisphereLight(map.ambient?.sky || sky.top, map.ambient?.ground || '#6b5a48', map.ambient?.intensity ?? 0.9));
   const sun = new THREE.DirectionalLight(sunCfg.color, sunCfg.intensity);
@@ -180,6 +181,17 @@ export async function buildWorld(scene, renderer, track, map, cfg) {
     }
   }
 
+  // --- raised sections become a bridge: side skirts, an underside and pillars down to the ground
+  if (track.samples.some(s => s.y > 0.6)) {
+    const flat = i => track.samples[i % track.N].y < 0.35 && track.samples[(i + 1) % track.N].y < 0.35;
+    const deckM = new THREE.MeshStandardMaterial({ color: '#c9ccd2', roughness: 0.7, side: THREE.DoubleSide });
+    for (const sgn of [-1, 1]) scene.add(new THREE.Mesh(ribbon(track, sgn * (half + 0.7), 0, sgn * (half + 0.7), -1.3, 4, flat), deckM));
+    scene.add(new THREE.Mesh(ribbon(track, -half - 0.7, -1.3, half + 0.7, -1.3, 4, flat), deckM));
+    const pil = [], o3 = new THREE.Object3D(), gap = Math.round(16 / track.step);
+    for (let i = 0; i < track.N; i += gap) { const s = track.samples[i]; if (s.y < 1.6) continue; for (const sgn of [-1, 1]) { o3.position.set(s.x + s.nx * sgn * (half - 1.5), (s.y - 1.3) / 2 - 0.7, s.z + s.nz * sgn * (half - 1.5)); o3.scale.set(1, s.y - 1.3 + 1.4, 1); o3.rotation.y = s.heading; o3.updateMatrix(); pil.push(o3.matrix.clone()); } }
+    if (pil.length) { const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1.6, 1, 2.2), new THREE.MeshStandardMaterial({ color: '#aeb3bb', roughness: 0.8 }), pil.length); pil.forEach((m4, i) => im.setMatrixAt(i, m4)); im.castShadow = true; scene.add(im); }
+  }
+
   // --- start line + arch with the event name
   const s0 = track.samples[0];
   const startTex = canvasTex(256, 32, (g, w, h) => {
@@ -261,6 +273,7 @@ export async function buildWorld(scene, renderer, track, map, cfg) {
   const theme = map.theme || (map.scenery === false ? 'none' : 'campus');
   if (theme === 'office') { buildOffice(scene, track, map, cfg); scene.fog = new THREE.Fog('#dfe6f0', 160, 700); dome.visible = false; scene.background = new THREE.Color('#dfe6f0'); }
   else if (theme === 'company') { buildCompany(scene, track, map, cfg); dome.visible = false; }
+  else if (theme === 'coast') buildCoast(scene, track, map);
   else if (theme === 'arena') { buildArena(scene, track, map, cfg); scene.environmentIntensity = 0.3; }
   else if (theme === 'campus') buildScenery(scene, track, map);
   return world;

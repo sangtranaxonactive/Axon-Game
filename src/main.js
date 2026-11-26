@@ -1,13 +1,12 @@
 import * as THREE from 'three';
-import { buildTrack, fmtTime } from './track-core.js';
+import { fmtTime } from './track-core.js';
 import { createCar, gridPlace, padIndices, IN, EV, TICK_MS, STUN_TICKS } from './physics.js';
 const ST = { spin: -1, air: -1 };
-import { buildWorld } from './world.js';
+import { createStage } from './stage.js';
 import { makeCar } from './car.js';
 import { audio } from './audio.js';
 import { CHARS, COLORS } from './looks.js';
 import { Predictor } from './netcar.js';
-import { createItems } from './items-view.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -24,10 +23,9 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;'
 
 // ------------------------------------------------------------------ boot
 const cfg = await (await fetch('/api/config')).json();
-const mapName = String(cfg.map).replace(/[^\w-]/g, '');
-const map = await (await fetch(`/maps/${mapName}.json`)).json();
-const track = buildTrack(map);
-const pads = padIndices(track, map);
+// The current map. Every room has its own, so these are swapped by setMap() when you join a room on another one.
+let map, track, pads, world, items, N;
+const mapNames = Object.fromEntries(cfg.maps.map(x => [x.id, x.name]));
 const teamColor = Object.fromEntries(cfg.teams.map(t => [t.id, t.color]));
 const teamName = Object.fromEntries(cfg.teams.map(t => [t.id, t.name]));
 
@@ -41,7 +39,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1, 0.3, 1500);
 // Bloom makes lamps, neon and nitro glow. It is the first thing switched off if a phone cannot keep up.
-let bloomOn = map.theme === 'arena' && map.bloom !== false && qs.get('bloom') !== '0'; // daylight maps are bright already: no bloom there
+let bloomOn = false, bloomDropped = qs.get('bloom') === '0'; // only the night map uses bloom; daylight maps are bright already
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: isTouch ? 0 : 4 }));
 composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.38, 0.5, 0.96);
@@ -57,7 +55,17 @@ function resize() {
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 250));
 resize();
-const world = await buildWorld(scene, renderer, track, map, cfg);
+const stage = createStage(scene, renderer, cfg);
+function applyStage(s) { ({ map, track, pads, world, items } = s); N = track.N; bloomOn = !bloomDropped && map.theme === 'arena' && map.bloom !== false; }
+applyStage(await stage.load(cfg.map));
+async function setMap(name) {
+  if (!name || !mapNames[name] || (stage.current && stage.current.name === name)) return;
+  if (race) endRaceView();
+  preview.show(false);
+  applyStage(await stage.load(name));
+  scene.add(skid.mesh); skid.clear(); miniSetup(); preview.respot();
+  if (current === 'sGarage') preview.show(true);
+}
 $('loading').remove();
 
 // ------------------------------------------------------------------ profile
@@ -65,7 +73,7 @@ const me = {
   pid: store.get('yep_pid') || (crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('')),
   name: store.get('yep_name') || '',
   team: store.get('yep_team') || '',
-  id: 0, best: null, rank: null, look: [0, 0, 0],
+  id: 0, bests: {}, ranks: {}, look: [0, 0, 0],
 };
 try { const l = JSON.parse(store.get('yep_look') || '[]'); if (Array.isArray(l) && l.length === 3) me.look = l.map(v => v | 0); } catch { /* default look */ }
 const carOf = (look, name, team) => makeCar(COLORS[look?.[2]] || COLORS[0], name, { char: look?.[0] | 0, charColor: COLORS[look?.[1]] || COLORS[0], tag: teamColor[team] });
@@ -102,8 +110,7 @@ $('teamPick').onclick = e => { const b = e.target.closest('button'); if (b) { me
 function renderHome() {
   $('meName').textContent = me.name;
   $('meDot').style.background = teamColor[me.team];
-  $('meBest').textContent = me.best != null ? fmtTime(me.best) : 'none yet';
-  $('meRank').textContent = me.rank ? `· rank #${me.rank}` : '';
+  $('meBest').innerHTML = cfg.maps.map(x => `<span>${esc(x.name)} <b>${me.bests[x.id] != null ? fmtTime(me.bests[x.id]) : '—'}</b>${me.ranks[x.id] ? ' #' + me.ranks[x.id] : ''}</span>`).join('');
 }
 function openProfile() { $('inName').value = me.name; renderTeams(); show('sProfile'); }
 $('btnEnter').onclick = () => {
@@ -121,11 +128,12 @@ $('btnEdit').onclick = openProfile;
 // ------------------------------------------------------------------ garage: pick a driver + colours (cosmetic only)
 const preview = {
   mesh: null, on: false,
-  spot: (() => { const s = track.samples[Math.floor(track.N * 0.015)]; return new THREE.Vector3(s.x, s.y, s.z); })(),
+  spot: new THREE.Vector3(),
+  respot() { const s = track.samples[Math.floor(track.N * 0.015)]; this.spot.set(s.x, s.y, s.z); },
   build() { if (this.mesh) scene.remove(this.mesh); this.mesh = carOf(me.look, null, me.team); this.mesh.position.copy(this.spot); scene.add(this.mesh); },
   show(on) { this.on = on; if (on) this.build(); else if (this.mesh) { scene.remove(this.mesh); this.mesh = null; } },
 };
-previewRef = preview;
+previewRef = preview; preview.respot();
 function renderGarage() {
   $('gChars').innerHTML = CHARS.map((n, i) => `<button data-i="${i}" class="${i === me.look[0] ? 'on' : ''}">${n}</button>`).join('');
   const sw = k => COLORS.map((c, i) => `<button data-i="${i}" class="${i === me.look[k] ? 'on' : ''}" style="background:${c}" aria-label="colour ${i + 1}"></button>`).join('');
@@ -140,6 +148,7 @@ $('btnCreate').onclick = () => { audio.unlock(); net.send({ t: 'create' }); };
 $('btnJoin').onclick = () => { audio.unlock(); const c = $('inCode').value.trim(); if (c.length === 4) net.send({ t: 'join', code: c }); else toast('Room codes are 4 digits'); };
 $('btnLeave').onclick = () => { net.send({ t: 'leave' }); room = null; show('sHome'); };
 $('btnGo').onclick = () => net.send({ t: 'go' });
+$('btnMap').onclick = () => net.send({ t: 'map' });
 $('btnHome').onclick = () => { net.send({ t: 'leave' }); room = null; endRaceView(); renderHome(); show('sHome'); };
 $('btnAgain').onclick = () => {
   endRaceView();
@@ -149,27 +158,30 @@ $('btnQuit').onclick = () => { net.send({ t: 'leave' }); room = null; endRaceVie
 $('btnMute').onclick = () => { audio.setMuted(!audio.muted); $('btnMute').classList.toggle('off', audio.muted); };
 
 // leaderboard panel
-let boardData = null, boardTab = 'solo';
+let boardData = null, boardTab = 'solo', boardMap = cfg.map;
 async function openBoard(from) {
-  boardReturn = from; show('sBoard');
+  boardReturn = from; show('sBoard'); if (stage.current) boardMap = stage.current.name;
   $('bdList').innerHTML = '<li>Loading…</li>';
   try { boardData = await (await fetch('/api/leaderboard')).json(); renderBoard(); } catch { $('bdList').innerHTML = '<li>Could not load</li>'; }
 }
 function renderBoard() {
   $('tabSolo').classList.toggle('on', boardTab === 'solo'); $('tabTeam').classList.toggle('on', boardTab === 'team');
   if (!boardData) return;
+  $('bdMaps').innerHTML = cfg.maps.length > 1 ? cfg.maps.map(x => `<button data-m="${esc(x.id)}" class="${x.id === boardMap ? 'on' : ''}">${esc(x.name)}</button>`).join('') : '';
+  const bd = boardData.maps[boardMap] || { top: [], teams: [] };
   if (boardTab === 'solo') {
-    $('bdList').innerHTML = boardData.top.map((e, i) =>
-      `<li class="${i + 1 === me.rank && e.name === me.name ? 'me-row' : ''}"><span class="n">${i + 1}</span><i style="background:${esc(teamColor[e.team] || '#888')}"></i><span class="nm">${esc(e.name)}</span><span class="tm">${fmtTime(e.best)}</span></li>`).join('')
+    $('bdList').innerHTML = bd.top.map((e, i) =>
+      `<li class="${i + 1 === me.ranks[boardMap] && e.name === me.name ? 'me-row' : ''}"><span class="n">${i + 1}</span><i style="background:${esc(teamColor[e.team] || '#888')}"></i><span class="nm">${esc(e.name)}</span><span class="tm">${fmtTime(e.best)}</span></li>`).join('')
       || '<li>Nobody has finished yet — be the first!</li>';
   } else {
-    $('bdList').innerHTML = boardData.teams.map((t, i) =>
+    $('bdList').innerHTML = bd.teams.map((t, i) =>
       `<li><span class="n">${i + 1}</span><i style="background:${esc(t.color)}"></i><span class="nm">${esc(t.name)} <span class="small">· ${t.counted}/${cfg.teamTopN} counted · ${t.members} racers</span></span><span class="tm">${t.avg != null ? fmtTime(t.avg) : '—'}</span></li>`).join('');
   }
 }
 $('btnBoard').onclick = () => openBoard('sHome');
 $('btnBoard2').onclick = () => openBoard('sResult');
 $('btnBack').onclick = () => show(boardReturn);
+$('bdMaps').onclick = e => { const b = e.target.closest('button'); if (b) { boardMap = b.dataset.m; renderBoard(); } };
 $('tabSolo').onclick = () => { boardTab = 'solo'; renderBoard(); };
 $('tabTeam').onclick = () => { boardTab = 'team'; renderBoard(); };
 
@@ -220,6 +232,8 @@ function renderLobby() {
   $('lbCode').classList.toggle('hidden', room.pub);
   $('lbPlayers').innerHTML = room.players.map(p => `<li><i style="background:${esc(teamColor[p.team])}"></i>${esc(p.name)}${p.id === room.host && !room.pub ? ' 👑' : ''}${p.id === me.id ? ' (you)' : ''}</li>`).join('');
   $('btnGo').classList.toggle('hidden', room.pub || room.host !== me.id);
+  $('lbMap').textContent = mapNames[room.map] || room.map;
+  $('btnMap').classList.toggle('hidden', room.pub || room.host !== me.id || cfg.maps.length < 2);
   if (room.pub) {
     room.startAtLocal = performance.now() + (room.startsIn ?? 0);
     $('lbInfo').textContent = '';
@@ -230,13 +244,13 @@ function renderLobby() {
 
 function onMessage(m) {
   switch (m.t) {
-    case 'welcome': me.id = m.id; me.best = m.best; me.rank = m.rank; if (m.team && m.team !== me.team) { me.team = m.team; store.set('yep_team', m.team); } renderHome(); break;
+    case 'welcome': me.id = m.id; me.bests = m.bests || {}; me.ranks = m.ranks || {}; if (m.team && m.team !== me.team) { me.team = m.team; store.set('yep_team', m.team); } renderHome(); break;
     case 'err': toast(m.msg, 5000); break;
     case 'room':
-      room = m;
+      room = m; setMap(m.map); // start building that room's map while people wait in the lobby
       if (!race) { renderLobby(); show('sLobby'); }
       break;
-    case 'start': room = m; startRace(m); break;
+    case 'start': { room = m; const t0 = performance.now(); setMap(m.map).then(() => startRace(m, t0)); break; } // the countdown runs from arrival, even if the map takes a moment to build
     case 'S': if (race) { const nowT = performance.now(); for (const s of m.ps) { const r = race.remotes.get(s[0]); if (!r) continue; const el = (nowT - (r.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { r.vx = (s[1] - r.sx) / el; r.vz = (s[2] - r.sz) / el; } r.sx = r.tx = s[1]; r.sz = r.tz = s[2]; r.at = nowT; r.th = s[3]; r.p = s[4]; r.flags = s[5]; } } break;
     case 'ev': if (race && m.r === race.id) race.pred.onEvent(m.k, m.c); break;
     case 'item': if (m.kind && (m.kind !== myItem || m.n > myCount)) { flash(ITEM_NAME[m.kind] + (isTouch ? '' : ' — press E'), 1100, 'xs'); audio.ready(); } setItem(m.kind, m.n); break;
@@ -247,7 +261,7 @@ function onMessage(m) {
     case 'done': if (race) { const r = race.remotes.get(m.id); if (r) { r.done = true; r.place = m.place; } } break;
     case 'grace': if (race && !race.finished) flash('45 seconds left!', 1600, true); break;
     case 'finish':
-      me.best = m.best; me.rank = m.rank;
+      me.bests = m.bests || {}; me.ranks = m.ranks || {};
       if (race) race.myResult = m;
       audio.beep(880, 0.4); setTimeout(() => audio.beep(1320, 0.5), 180);
       break;
@@ -268,6 +282,7 @@ const skid = (() => {
   let head = 0, live = 0;
   const last = new Map();
   return {
+    mesh,
     add(key, x, y, z, nx, nz) {
       const p = last.get(key);
       if (!p) { last.set(key, { x, z, nx, nz }); return; }
@@ -307,7 +322,6 @@ function kickFx() {
 }
 
 // ------------------------------------------------------------------ items + connection quality
-const items = createItems(scene, track);
 let myItem = null, myCount = 0;
 const ITEM_NAME = { banana: 'BANANA ×2', magnet: 'MAGNET', nitro: 'NITRO ITEM' };
 const ITEM_ICON = { banana: '#i-banana', magnet: '#i-magnet', nitro: '#i-bolt' };
@@ -336,14 +350,13 @@ setInterval(() => {
 
 // ------------------------------------------------------------------ race
 let race = null;
-const N = track.N;
 
 function flash(text, ms = 900, small = false) { // small: true = medium banner, 'xs' = small pill that never hides the road
   const el = $('hMsg'); el.textContent = text; el.classList.toggle('sm', small === true); el.classList.toggle('xs', small === 'xs');
   clearTimeout(flash.t); if (ms) flash.t = setTimeout(() => { el.textContent = ''; }, ms);
 }
 
-function startRace(m) {
+function startRace(m, t0 = performance.now()) {
   endRaceView();
   const mine = m.players.find(p => p.id === me.id);
   const car = createCar(track, mine ? mine.slot : 0, m.grid[me.id]);
@@ -358,10 +371,10 @@ function startRace(m) {
     remotes.set(p.id, { mesh: rm, sx: rg.x, sz: rg.z, vx: 0, vz: 0, at: 0, x: rg.x, z: rg.z, h: rh, tx: rg.x, tz: rg.z, th: rh, p: rg.lapIdx / N, flags: 0, px: rg.x, pz: rg.z, name: p.name, team: p.team });
   }
   items.reset(m.boxes); setItem(null, 0);
-  race = { id: m.race, over: false, pred: new Predictor(track, pads, car, m.laps), car, mesh, remotes, startAt: performance.now() + m.countdown, laps: m.laps, finished: false, lastCount: 5, camH: car.h, time: 0,
+  race = { id: m.race, over: false, pred: new Predictor(track, pads, car, m.laps), car, mesh, remotes, startAt: t0 + m.countdown, laps: m.laps, finished: false, lastCount: 5, camH: car.h, time: 0,
     acc: 0, last: 0, queue: [], sent: 0, prev: { x: car.x, z: car.z, h: car.h }, myResult: null };
   $('hPosOf').textContent = '/' + m.players.length;
-  $('hBest').textContent = me.best != null ? 'Best ' + fmtTime(me.best) : '';
+  $('hBest').textContent = me.bests[m.map] != null ? 'Best ' + fmtTime(me.bests[m.map]) : '';
   show(null);
   $('hud').classList.remove('hidden');
   skid.clear(); audio.setIntense(true);
@@ -382,7 +395,7 @@ function showResults(results) {
   const mine = results.find(r => r.id === me.id);
   const mr = race && race.myResult;
   $('rsMine').innerHTML = mine && mine.time != null
-    ? `Your time<b>${fmtTime(mine.time)}</b>${mr && mr.record ? '<span class="pb">🏆 NEW COMPANY RECORD!</span>' : mr && mr.pb ? '<span class="pb">★ New personal best</span>' : ''}${me.rank ? ` · Overall rank #${me.rank}` : ''}`
+    ? `Your time<b>${fmtTime(mine.time)}</b>${mr && mr.record ? '<span class="pb">🏆 NEW TRACK RECORD!</span>' : mr && mr.pb ? '<span class="pb">★ New personal best</span>' : ''}${room && me.ranks[room.map] ? ` · ${esc(mapNames[room.map] || '')} rank #${me.ranks[room.map]}` : ''}`
     : 'You did not finish in time — try again!';
   $('rsList').innerHTML = results.map((r, i) => `<li class="${r.id === me.id ? 'me-row' : ''}"><span class="n">${r.time != null ? i + 1 : '–'}</span><i style="background:${esc(teamColor[r.team] || '#888')}"></i><span class="nm">${esc(r.name)}</span><span class="tm">${r.time != null ? fmtTime(r.time) : 'DNF'}</span></li>`).join('');
   $('btnAgain').textContent = room && !room.pub ? 'BACK TO LOBBY' : 'RACE AGAIN';
@@ -607,7 +620,7 @@ function frame() {
     const fps = frames / fpsT; frames = 0; fpsT = 0;
     if (fps < 40 && ++lowCount >= 2) {
       lowCount = 0;
-      if (bloomOn) bloomOn = false;
+      if (bloomOn) { bloomOn = false; bloomDropped = true; }
       else if (pixelRatio > 0.8) { pixelRatio = Math.max(0.75, pixelRatio - 0.25); renderer.setPixelRatio(pixelRatio); resize(); }
       else if (renderer.shadowMap.enabled) { renderer.shadowMap.enabled = false; world.sun.castShadow = false; }
       else if (!audio.musicOff) { audio.stopMusic(); $('btnMute').classList.add('nomusic'); } // last resort on a struggling phone: free the CPU the music uses
@@ -622,7 +635,7 @@ if (qs.get('room') && me.name && me.team) {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) audio.setEngine(0, false); });
 frame();
-if (cfg.testHooks) window.__game = { get race() { return race; }, inp, track, me }; // automated tests only (server started with TEST_HOOKS=1)
+if (cfg.testHooks) window.__game = { get race() { return race; }, inp, get track() { return track; }, me, get map() { return stage.current && stage.current.name; } }; // automated tests only (server started with TEST_HOOKS=1)
 
 if (!isTouch) document.body.classList.add('kbd');
 // ---- full screen. Android / desktop / iPad: the Fullscreen API (plus a landscape lock where allowed).

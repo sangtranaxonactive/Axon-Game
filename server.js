@@ -26,14 +26,19 @@ if (!config.hostCode || config.hostCode === 'change-me') {
 }
 process.on('uncaughtException', e => console.error('[uncaught]', e));
 process.on('unhandledRejection', e => console.error('[unhandled]', e));
-if (process.env.MAP) config.map = process.env.MAP;
+if (process.env.MAP) { config.map = process.env.MAP; config.maps = [config.map]; }
+// Every room races on one of these maps. Public rooms rotate through them; the host of a private room picks.
+if (!Array.isArray(config.maps) || !config.maps.length) config.maps = [config.map];
+config.maps = config.maps.map(m => String(m).replace(/[^\w-]/g, '')).filter(Boolean);
+config.map = config.maps[0];
+const stages = {}; // map id -> { id, name, track, pads }   (filled at start-up)
 const teamIds = new Set(config.teams.map(t => t.id));
-const VERSION = 16; // shown on the home screen so everyone can tell which build they are playing
+const VERSION = 17; // shown on the home screen so everyone can tell which build they are playing
 let BUILD = 'v' + VERSION;
 const publicConfig = () => ({
   build: BUILD,
   eventName: config.eventName, subtitle: config.subtitle, prize: config.prize,
-  map: config.map, laps: config.laps, teams: config.teams, roomSize: config.roomSize, teamTopN: config.teamTopN,
+  map: config.map, maps: config.maps.map(id => ({ id, name: stages[id] ? stages[id].name : id })), laps: config.laps, teams: config.teams, roomSize: config.roomSize, teamTopN: config.teamTopN,
   testHooks: process.env.TEST_HOOKS === '1' || undefined,
   company: typeof config.company === 'string' ? config.company.slice(0, 40) : undefined,
   values: Array.isArray(config.values) ? config.values.slice(0, 6).map(v => String(v).slice(0, 24)) : undefined,
@@ -42,8 +47,9 @@ const publicConfig = () => ({
 
 // ---------------------------------------------------------------- leaderboard
 fs.mkdirSync(DATA_DIR, { recursive: true });
-let board = Object.create(null); // pid -> { name, team, best, races, at }
+let board = Object.create(null); // pid -> { name, team, races, at, bests: { mapId: ms } }
 try { Object.assign(board, JSON.parse(fs.readFileSync(LB_FILE, 'utf8'))); } catch { /* first run */ }
+for (const k in board) { const e = board[k]; if (!e.bests) { e.bests = {}; if (e.best != null) e.bests[config.map] = e.best; delete e.best; } } // older save files
 function flushBoard() { try { fs.writeFileSync(LB_FILE, JSON.stringify(board)); } catch (e) { console.error(e); } }
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { flushBoard(); process.exit(0); });
 let saveTimer = null;
@@ -56,11 +62,11 @@ function saveBoard() {
     });
   }, 1000);
 }
-let lbCache = null;
-function leaderboard() {
-  if (lbCache) return lbCache;
-  const all = Object.entries(board).filter(([, e]) => e.best != null)
-    .map(([, e]) => ({ name: e.name, team: e.team, best: e.best, races: e.races }))
+let lbCache = {};
+function leaderboard(map) {
+  if (lbCache[map]) return lbCache[map];
+  const all = Object.entries(board).filter(([, e]) => e.bests[map] != null)
+    .map(([, e]) => ({ name: e.name, team: e.team, best: e.bests[map], races: e.races }))
     .sort((a, b) => a.best - b.best);
   const byTeam = {};
   for (const e of all) (byTeam[e.team] ||= []).push(e.best);
@@ -77,16 +83,17 @@ function leaderboard() {
     if (a.avg == null || b.avg == null) return (a.avg == null) - (b.avg == null);
     return a.avg - b.avg;
   });
-  lbCache = { top: all.slice(0, 100), total: all.length, teams };
-  return lbCache;
+  return (lbCache[map] = { top: all.slice(0, 100), total: all.length, teams });
 }
-function rankOf(pid) {
+const allBoards = () => Object.fromEntries(config.maps.map(id => [id, leaderboard(id)]));
+function rankOf(pid, map) {
   const e = board[pid];
-  if (!e || e.best == null) return null;
+  if (!e || e.bests[map] == null) return null;
   let r = 1;
-  for (const k in board) if (board[k].best != null && board[k].best < e.best) r++;
+  for (const k in board) if (board[k].bests[map] != null && board[k].bests[map] < e.bests[map]) r++;
   return r;
 }
+const mine = pid => { const e = board[pid]; return { bests: e ? e.bests : {}, ranks: Object.fromEntries(config.maps.map(id => [id, rankOf(pid, id)])) }; };
 const recent = []; // latest finishes for the big screen
 
 // ---------------------------------------------------------------- static files
@@ -140,7 +147,7 @@ async function handle(req, res) {
   if (p.includes('\0')) { res.writeHead(400); return res.end(); }
 
   if (p === '/api/config') return json(res, publicConfig());
-  if (p === '/api/leaderboard') return json(res, leaderboard());
+  if (p === '/api/leaderboard') return json(res, { maps: allBoards() });
   if (p === '/api/stats') return json(res, { online: players.size, screens: screens.size, rooms: rooms.size, racing: countRacing() });
   if (p === '/api/qr.svg') {
     const target = url.searchParams.get('u') || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}/`;
@@ -158,19 +165,20 @@ async function handle(req, res) {
     if ((req.headers['x-admin-key'] || url.searchParams.get('key')) !== config.adminKey) return json(res, { error: 'forbidden' }, 403);
     if (p === '/api/admin/reset' && req.method === 'POST') {
       fs.writeFileSync(path.join(DATA_DIR, `leaderboard-backup-${Date.now()}.json`), JSON.stringify(board));
-      board = Object.create(null); lbCache = null; recent.length = 0; saveBoard(); pushBoard();
+      board = Object.create(null); lbCache = {}; recent.length = 0; saveBoard(); pushBoard();
       return json(res, { ok: true });
     }
     if (p === '/api/admin/remove' && req.method === 'POST') {
-      delete board[url.searchParams.get('pid')]; lbCache = null; saveBoard(); pushBoard();
+      delete board[url.searchParams.get('pid')]; lbCache = {}; saveBoard(); pushBoard();
       return json(res, { ok: true });
     }
     if (p === '/api/admin/export.csv') {
       const teamName = Object.fromEntries(config.teams.map(t => [t.id, t.name]));
-      const rows = Object.entries(board).filter(([, e]) => e.best != null).sort((a, b) => a[1].best - b[1].best)
-        .map(([pid, e], i) => [i + 1, `"${String(e.name).replace(/"/g, '""')}"`, `"${teamName[e.team] || e.team}"`, (e.best / 1000).toFixed(3), e.races, pid].join(','));
+      const rows = [];
+      for (const id of config.maps) Object.entries(board).filter(([, e]) => e.bests[id] != null).sort((a, b) => a[1].bests[id] - b[1].bests[id])
+        .forEach(([pid, e], i) => rows.push([`"${stages[id].name}"`, i + 1, `"${String(e.name).replace(/"/g, '""')}"`, `"${teamName[e.team] || e.team}"`, (e.bests[id] / 1000).toFixed(3), e.races, pid].join(',')));
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="yep-racing.csv"' });
-      return res.end('﻿rank,name,team,best_seconds,races,pid\n' + rows.join('\n'));
+      return res.end('﻿map,rank,name,team,best_seconds,races,pid\n' + rows.join('\n'));
     }
     return json(res, { error: 'not found' }, 404);
   }
@@ -217,7 +225,7 @@ function broadcast(room, obj) {
 }
 function roomList() {
   const out = [];
-  for (const r of rooms.values()) { out.push({ code: r.code, pub: r.pub, state: r.state, names: r.players.map(p => p.name) }); if (out.length >= 60) break; }
+  for (const r of rooms.values()) { out.push({ code: r.code, pub: r.pub, map: r.map, state: r.state, names: r.players.map(p => p.name) }); if (out.length >= 60) break; }
   return out;
 }
 function dropSpecs(room) { for (const ws of room.specs) { ws.specRoom = null; send(ws, { t: 'gone' }); } room.specs.clear(); }
@@ -232,16 +240,17 @@ function cleanName(s) {
 }
 function roomInfo(room) {
   return {
-    t: 'room', code: room.code, pub: room.pub, state: room.state, host: room.host ? room.host.id : null,
+    t: 'room', code: room.code, pub: room.pub, map: room.map, state: room.state, host: room.host ? room.host.id : null,
     startsIn: room.autoAt ? Math.max(0, room.autoAt - Date.now()) : null,
     players: room.players.map(p => ({ id: p.id, name: p.name, team: p.team, slot: p.slot, look: p.look })),
   };
 }
+let mapTurn = 0;
 function newRoom(pub) {
   if (rooms.size >= 2000) return null;
   let code;
   do { code = String(Math.floor(1000 + Math.random() * 9000)); } while (rooms.has(code));
-  const room = { code, pub, state: 'lobby', players: [], host: null, autoAt: null, timers: [], specs: new Set(), bananas: new Map(), banSeq: 0, boxAt: [] };
+  const room = { code, pub, map: config.maps[pub ? mapTurn++ % config.maps.length : 0], state: 'lobby', players: [], host: null, autoAt: null, timers: [], specs: new Set(), bananas: new Map(), banSeq: 0, boxAt: [] };
   rooms.set(code, room);
   return room;
 }
@@ -279,6 +288,7 @@ function startRace(room) {
   room.startAt = Date.now() + COUNT;
   room.results = [];
   room.raceId = (room.raceId || 0) + 1;
+  const track = stages[room.map].track;
   const grid = {};
   for (const p of room.players) {
     const h = sim.gridPlace(track, p.slot).heading;
@@ -336,10 +346,11 @@ function onInput(pl, m) {
   // Inputs may never run ahead of real time (no fast-forwarding).
   if (car.tick + b.length > (Date.now() - room.startAt) / sim.TICK_MS + 20 || car.tick > MAX_TICKS) return desync(pl, 'clock');
   for (let i = 0; i < b.length; i++) if (!Number.isInteger(b[i]) || b[i] < 0 || b[i] > 31) return desync(pl, 'bad input');
+  const { track, pads } = stages[room.map];
   for (let i = 0; i < b.length; i++) {
     while (car.evq.length && car.evq[0].k <= car.tick) sim.applyEvent(car, car.evq.shift().c);
     sim.stepCar(track, pads, car, b[i], config.laps);
-    if (car.finishMs === null && car.sc < 0) touchItems(pl, room, car);
+    if (car.finishMs === null && car.sc < 0) touchItems(pl, room, car, track);
   }
   if (car.finishMs !== null && !pl.finished) onFinish(pl);
 }
@@ -354,7 +365,7 @@ function pushEvent(pl, code) {
   send(pl.ws, { t: 'ev', r: pl.room.raceId, k, c: code });
 }
 function sendItem(pl) { send(pl.ws, { t: 'item', kind: pl.item ? pl.item.kind : null, n: pl.item ? pl.item.n : 0 }); }
-function touchItems(pl, room, car) {
+function touchItems(pl, room, car, track) {
   const now = Date.now(), boxes = track.itemBoxes, N = track.N;
   for (let i = 0; i < boxes.length; i++) { // a box is always taken by whoever touches it first; a new item replaces the one in hand
     const bx = boxes[i];
@@ -405,20 +416,21 @@ function onFinish(pl) {
   const wall = now - room.startAt;
   const time = Math.round(Math.max(pl.car.finishMs, wall - 1500));
   pl.finished = true;
-  const entry = board[pl.pid] || (board[pl.pid] = { name: pl.name, team: pl.team, best: null, races: 0 });
+  const map = room.map;
+  const entry = board[pl.pid] || (board[pl.pid] = { name: pl.name, team: pl.team, races: 0, bests: {} });
   entry.name = pl.name; entry.team = pl.team; entry.races++; entry.at = now;
-  const prevTop = leaderboard().top[0];
-  const pb = entry.best == null || time < entry.best;
-  if (pb) entry.best = time;
-  lbCache = null; saveBoard();
+  const prevTop = leaderboard(map).top[0];
+  const pb = entry.bests[map] == null || time < entry.bests[map];
+  if (pb) entry.bests[map] = time;
+  delete lbCache[map]; saveBoard();
   const res = { id: pl.id, name: pl.name, team: pl.team, time };
   room.results.push(res);
   const record = pb && (!prevTop || time < prevTop.best);
-  send(pl.ws, { t: 'finish', time, place: room.results.length, pb, best: entry.best, rank: rankOf(pl.pid), record });
+  send(pl.ws, { t: 'finish', map, time, place: room.results.length, pb, ...mine(pl.pid), record });
   broadcast(room, { t: 'done', id: pl.id, time, place: room.results.length });
-  recent.unshift({ name: pl.name, team: pl.team, time, pb, record, at: now });
+  recent.unshift({ name: pl.name, team: pl.team, map, time, pb, record, at: now });
   recent.length = Math.min(recent.length, 12);
-  pushBoard(record ? res : null);
+  pushBoard(record ? { ...res, map } : null);
   checkRaceEnd(room);
 }
 
@@ -427,7 +439,7 @@ function pushBoard(record) { boardDirty = true; if (record) pendingRecord = reco
 setInterval(() => {
   if (!boardDirty || !screens.size) { boardDirty = false; return; }
   boardDirty = false;
-  const s = JSON.stringify({ t: 'board', ...leaderboard(), recent, record: pendingRecord });
+  const s = JSON.stringify({ t: 'board', maps: allBoards(), recent, record: pendingRecord });
   pendingRecord = null;
   for (const ws of screens) if (ws.readyState === 1) ws.send(s);
 }, 1000);
@@ -445,7 +457,7 @@ wss.on('connection', ws => {
     if (m.t === 'screen') {
       if (pl || screens.has(ws) || screens.size >= 30) return;
       screens.add(ws); clearTimeout(ws.helloTimer);
-      return send(ws, { t: 'board', ...leaderboard(), recent, record: null });
+      return send(ws, { t: 'board', maps: allBoards(), recent, record: null });
     }
     if (m.t === 'watch') { // commentator / organiser view: needs the host code, never mixes with players
       if (pl || screens.has(ws)) return;
@@ -453,7 +465,7 @@ wss.on('connection', ws => {
       if (!ws.spec && specCount >= 40) return send(ws, { t: 'err', msg: 'Too many viewers' });
       if (!ws.spec) { ws.spec = true; specCount++; }
       clearTimeout(ws.helloTimer);
-      return send(ws, { t: 'watching', rooms: roomList(), map: config.map });
+      return send(ws, { t: 'watching', rooms: roomList() });
     }
     if (ws.spec) {
       if (m.t === 'rooms') return send(ws, { t: 'rooms', rooms: roomList() });
@@ -464,7 +476,7 @@ wss.on('connection', ws => {
         room.specs.add(ws); ws.specRoom = room;
         send(ws, roomInfo(room));
         if (room.state !== 'lobby') {
-          const grid = {}; for (const p of room.players) grid[p.id] = sim.gridPlace(track, p.slot).heading;
+          const grid = {}; for (const p of room.players) grid[p.id] = sim.gridPlace(stages[room.map].track, p.slot).heading;
           const now = Date.now();
           send(ws, { ...roomInfo(room), t: 'start', countdown: Math.max(0, room.startAt - now), laps: config.laps, grid, race: room.raceId,
             boxes: room.boxAt.map(at => at === Infinity ? -1 : Math.max(0, at - now)), bananas: [...room.bananas].map(([id, bn]) => [id, bn.x, bn.z]), done: room.results.map(r => [r.id, r.time]), elapsed: Math.max(0, now - room.startAt) });
@@ -473,7 +485,7 @@ wss.on('connection', ws => {
       return;
     }
     if (m.t === 'hello') {
-      if (pl) { if (!pl.room) { pl.name = cleanName(m.name); pl.look = cleanLook(m.look); if (teamIds.has(m.team) && !board[pl.pid]) pl.team = m.team; } return send(ws, { t: 'welcome', id: pl.id, team: pl.team, best: board[pl.pid] ? board[pl.pid].best : null, rank: rankOf(pl.pid) }); }
+      if (pl) { if (!pl.room) { pl.name = cleanName(m.name); pl.look = cleanLook(m.look); if (teamIds.has(m.team) && !board[pl.pid]) pl.team = m.team; } return send(ws, { t: 'welcome', id: pl.id, team: pl.team, ...mine(pl.pid) }); }
       const pid = String(m.pid || '');
       if (!/^[A-Za-z0-9-]{16,40}$/.test(pid)) return ws.close();
       if (screens.has(ws)) return;
@@ -482,7 +494,7 @@ wss.on('connection', ws => {
       const team = e && teamIds.has(e.team) ? e.team : teamIds.has(m.team) ? m.team : config.teams[0].id;
       const np = { ws, id: nextId++, pid, name: cleanName(m.name), look: cleanLook(m.look), team, room: null, car: null };
       players.set(ws, np); clearTimeout(ws.helloTimer);
-      return send(ws, { t: 'welcome', id: np.id, team, best: e ? e.best : null, rank: rankOf(pid) });
+      return send(ws, { t: 'welcome', id: np.id, team, ...mine(pid) });
     }
     if (!pl) return;
     switch (m.t) {
@@ -506,6 +518,11 @@ wss.on('connection', ws => {
         joinRoom(pl, room);
         break;
       }
+      case 'map': { // host of a private lobby cycles to the next map
+        const r = pl.room;
+        if (r && !r.pub && r.host === pl && r.state === 'lobby') { r.map = config.maps[(config.maps.indexOf(r.map) + 1) % config.maps.length]; broadcast(r, roomInfo(r)); }
+        break;
+      }
       case 'go': if (pl.room && !pl.room.pub && pl.room.host === pl) startRace(pl.room); break;
       case 'leave': leaveRoom(pl); break;
     }
@@ -526,10 +543,10 @@ setInterval(() => {
   relayN++;
   for (const room of rooms.values()) {
     if (room.state === 'lobby' || (room.players.length < 2 && !room.specs.size)) continue;
-    const ps = [];
+    const ps = [], N = stages[room.map].track.N;
     for (const p of room.players) {
       const c = p.car; if (!c) continue;
-      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / track.N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0) | (c.slowT > 0 ? 4 : 0) | (p.finished ? 8 : 0) | (c.spinT > 0 ? 16 : 0) | (c.airT > 0 ? 32 : 0)]);
+      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0) | (c.slowT > 0 ? 4 : 0) | (p.finished ? 8 : 0) | (c.spinT > 0 ? 16 : 0) | (c.airT > 0 ? 32 : 0)]);
     }
     if (!ps.length) continue;
     const s = JSON.stringify({ t: 'S', ps });
@@ -544,7 +561,7 @@ setInterval(() => {
   const cars = [];
   for (const room of rooms.values()) {
     if (room.state === 'lobby') continue;
-    for (const p of room.players) if (p.car && !p.finished) cars.push([p.id, Math.round(p.car.x), Math.round(p.car.z), p.team]);
+    for (const p of room.players) if (p.car && !p.finished) cars.push([p.id, Math.round(p.car.x), Math.round(p.car.z), p.team, config.maps.indexOf(room.map)]);
   }
   const s = JSON.stringify({ t: 'live', cars, online: players.size, racing: countRacing() });
   for (const ws of screens) if (ws.readyState === 1 && ws.bufferedAmount < 262144) ws.send(s);
@@ -561,13 +578,16 @@ setInterval(() => {
 }, 20000);
 
 // Load the shared simulation + the track, then start listening.
-let sim, track, pads;
+let sim;
 (async () => {
   sim = await import('./src/physics.js');
   const { buildTrack } = await import('./src/track-core.js');
-  const map = JSON.parse(fs.readFileSync(path.join(PUB, 'maps', config.map + '.json'), 'utf8'));
-  track = buildTrack(map); pads = sim.padIndices(track, map);
+  for (const id of config.maps) {
+    const map = JSON.parse(fs.readFileSync(path.join(PUB, 'maps', id + '.json'), 'utf8'));
+    const track = buildTrack(map);
+    stages[id] = { id, name: map.name || id, track, pads: sim.padIndices(track, map) };
+  }
   await require('./tools/build.js'); // browser bundle is always rebuilt from the same sources the server simulates with
   BUILD = 'v' + VERSION + '-' + require('crypto').createHash('sha1').update(fs.readFileSync(path.join(PUB, 'dist', 'game.js'))).digest('hex').slice(0, 6);
-  server.listen(PORT, () => console.log(`YEP Racing: http://localhost:${PORT}  |  big screen: /screen  |  map: ${config.map} (${Math.round(track.length)} m)  |  build ${BUILD}`));
+  server.listen(PORT, () => console.log(`YEP Racing: http://localhost:${PORT}  |  big screen: /screen  |  maps: ${config.maps.map(id => `${stages[id].name} (${Math.round(stages[id].track.length)} m)`).join(', ')}  |  build ${BUILD}`));
 })().catch(e => { console.error('Startup failed:', e); process.exit(1); });

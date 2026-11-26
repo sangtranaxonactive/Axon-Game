@@ -300,3 +300,22 @@ body.standalone #btnFull, body.standalone #btnFullHome { display: none; }
   #btnFull { right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 94px); }
   #hNet { right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 136px); top: calc(var(--top) + 10px); }
 }
+
+/* ---------- update 17: bigger steering buttons, slightly bigger right-hand buttons (landscape) ---------- */
+@media (orientation: landscape) {
+  .pad-l { gap: 10px; }
+  .steer { width: clamp(92px, min(29vh, 14.5vw), 128px); height: clamp(92px, min(29vh, 14.5vw), 128px); }
+  .pad-r { width: clamp(214px, 62vh, 274px); height: clamp(186px, 53vh, 236px); }
+  .drift { width: clamp(92px, 27.5vh, 122px); height: clamp(92px, 27.5vh, 122px); font-size: 16px; }
+  .nitro-btn { right: clamp(100px, 29.5vh, 132px); width: clamp(78px, 23vh, 102px); height: clamp(78px, 23vh, 102px); font-size: 13px; }
+  .item-btn { bottom: clamp(100px, 29.5vh, 132px); width: clamp(66px, 19.5vh, 88px); height: clamp(66px, 19.5vh, 88px); }
+  .hud-bc { width: clamp(120px, 19vw, 190px); }
+}
+
+/* ---------- update 17: several maps ---------- */
+.mybest { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 12.5px; } .mybest b { font-size: 16px; }
+.maprow { display: flex; align-items: center; justify-content: center; gap: 10px; font: 700 13px var(--display); letter-spacing: .18em; color: var(--mute); }
+.maprow b { font: italic 800 22px var(--display); letter-spacing: .04em; color: #fff; } .maprow .btn { padding: 5px 12px; font-size: 14px; }
+.chips3 { display: flex; gap: 6px; } .chips3:empty { display: none; }
+.chips3 button { flex: 1; padding: 7px 4px; border-radius: 10px; border: 1px solid var(--line); background: rgba(2, 14, 30, .5); color: var(--foam); font: 700 14px var(--display); letter-spacing: .04em; }
+.chips3 button.on { border-color: var(--surf); background: var(--ocean); color: #fff; }
