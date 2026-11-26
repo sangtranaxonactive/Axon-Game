@@ -93,6 +93,7 @@ $('evSub').textContent = cfg.subtitle || '';
 $('evPrize').textContent = cfg.prize || '';
 $('hLaps').textContent = cfg.laps;
 document.title = cfg.eventName;
+$('ver').textContent = cfg.build || '';
 
 function renderTeams() {
   $('teamPick').innerHTML = cfg.teams.map(t => `<button data-t="${esc(t.id)}" class="${t.id === me.team ? 'on' : ''}"><i style="background:${esc(t.color)}"></i>${esc(t.name)}</button>`).join('');
@@ -645,6 +646,13 @@ async function toggleFull() {
 if (fsApi) document.addEventListener(fsApi[3], () => { const on = !!document[fsApi[2]]; document.body.classList.toggle('is-full', on); $('btnFullHome').textContent = on ? '⛶ EXIT FULL SCREEN' : '⛶ FULL SCREEN'; setTimeout(resize, 150); });
 if (standalone) document.body.classList.add('standalone'); // already full screen: no button needed
 $('btnFull').onclick = $('btnFullHome').onclick = toggleFull;
+async function enterFull() { if (isTouch && fsApi && !document[fsApi[2]]) { try { await fsRoot[fsApi[0]]({ navigationUI: 'hide' }); try { await screen.orientation.lock('landscape'); } catch { /* not supported */ } } catch { /* user can still use the button */ } } }
+async function leaveFull() { if (fsApi && document[fsApi[2]]) { try { screen.orientation.unlock(); } catch { /* not locked */ } try { await document[fsApi[1]](); } catch { /* already out */ } } }
+for (const id of ['btnQuick', 'btnCreate', 'btnJoin', 'btnGo', 'btnAgain']) $(id).addEventListener('click', enterFull);
+for (const id of ['btnQuit', 'btnHome', 'btnLeave']) $(id).addEventListener('click', leaveFull);
+if (isTouch && !fsApi && !standalone && !store.get('yep_fs_hint')) { // iPhone: say once how to get rid of Safari's bars
+  $('btnQuick').addEventListener('click', () => { if (!store.get('yep_fs_hint')) { store.set('yep_fs_hint', '1'); toast('Tip: for full screen on iPhone tap FULL SCREEN on the home screen', 6000); } });
+}
 $('btnFullClose').onclick = () => show(fullReturn);
 if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(resize, 60)); // Safari bars sliding in and out
 $('btnPortrait').onclick = () => document.body.classList.add('allow-portrait');

@@ -289,3 +289,14 @@ body.standalone #btnFull, body.standalone #btnFullHome { display: none; }
   #hNet { left: auto; right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 118px); }
 }
 @media (orientation: portrait) { #btnFull { top: calc(var(--top) + var(--u) * 17); } }
+
+/* ---------- update 16: build stamp, obvious full-screen controls ---------- */
+#ver { position: fixed; left: 6px; bottom: 4px; font: 600 10px var(--body); color: rgba(233,246,255,.45); pointer-events: none; z-index: 5; }
+.btn.full { border: 1.5px solid var(--surf); background: rgba(53, 200, 245, .14); color: #fff; }
+#btnFull { border-color: var(--surf); color: var(--surf); opacity: 1; }
+@media (orientation: landscape) {
+  .mini-btn { width: 34px; height: 34px; }
+  #btnMute { right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 54px); }
+  #btnFull { right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 94px); }
+  #hNet { right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 136px); top: calc(var(--top) + 10px); }
+}

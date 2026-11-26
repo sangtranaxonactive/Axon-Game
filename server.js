@@ -28,7 +28,10 @@ process.on('uncaughtException', e => console.error('[uncaught]', e));
 process.on('unhandledRejection', e => console.error('[unhandled]', e));
 if (process.env.MAP) config.map = process.env.MAP;
 const teamIds = new Set(config.teams.map(t => t.id));
+const VERSION = 16; // shown on the home screen so everyone can tell which build they are playing
+let BUILD = 'v' + VERSION;
 const publicConfig = () => ({
+  build: BUILD,
   eventName: config.eventName, subtitle: config.subtitle, prize: config.prize,
   map: config.map, laps: config.laps, teams: config.teams, roomSize: config.roomSize, teamTopN: config.teamTopN,
   testHooks: process.env.TEST_HOOKS === '1' || undefined,
@@ -177,6 +180,7 @@ async function handle(req, res) {
     if (!f) { res.writeHead(403); return res.end(); }
     return sendFile(req, res, f, 'public, max-age=604800, immutable');
   }
+  if (p === '/api/version') return json(res, { build: BUILD });
   if (p === '/') p = '/index.html';
   if (p === '/editor' || p === '/editor.html' || p === '/dist/editor.js') {
     // organiser tool: needs the admin key (?key=...), which then rides along as a cookie for the script
@@ -186,6 +190,13 @@ async function handle(req, res) {
   }
   if (['/screen', '/editor', '/admin', '/live'].includes(p)) p += '.html';
   if (p.endsWith('.map')) { res.writeHead(404); return res.end(); }
+  if (p.endsWith('.html')) { // pages are never cached, and they point at build-stamped scripts so phones cannot keep an old game
+    const f = safeJoin(PUB, p);
+    if (!f || !fs.existsSync(f)) { res.writeHead(404); return res.end('Not found'); }
+    const html = fs.readFileSync(f, 'utf8').replace(/(\/dist\/\w+\.js|\/css\/game\.css)"/g, `$1?b=${BUILD}"`);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(html);
+  }
   const f = safeJoin(PUB, p);
   if (!f) { res.writeHead(403); return res.end(); }
   sendFile(req, res, f, /\.(glb|png|jpg|webp|mp3)$/.test(f) ? 'public, max-age=86400' : 'no-cache');
@@ -557,5 +568,6 @@ let sim, track, pads;
   const map = JSON.parse(fs.readFileSync(path.join(PUB, 'maps', config.map + '.json'), 'utf8'));
   track = buildTrack(map); pads = sim.padIndices(track, map);
   await require('./tools/build.js'); // browser bundle is always rebuilt from the same sources the server simulates with
-  server.listen(PORT, () => console.log(`YEP Racing: http://localhost:${PORT}  |  big screen: /screen  |  map: ${config.map} (${Math.round(track.length)} m)`));
+  BUILD = 'v' + VERSION + '-' + require('crypto').createHash('sha1').update(fs.readFileSync(path.join(PUB, 'dist', 'game.js'))).digest('hex').slice(0, 6);
+  server.listen(PORT, () => console.log(`YEP Racing: http://localhost:${PORT}  |  big screen: /screen  |  map: ${config.map} (${Math.round(track.length)} m)  |  build ${BUILD}`));
 })().catch(e => { console.error('Startup failed:', e); process.exit(1); });

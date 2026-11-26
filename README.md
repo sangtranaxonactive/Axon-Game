@@ -70,6 +70,12 @@ Thêm đường tắt cho map khác: `node tools/suggest-shortcuts.mjs <map>` g�
   Để livestream: chia sẻ cửa sổ trình duyệt này qua OBS / Teams / Zoom. Trang này chỉ nhận dữ liệu, không lái xe hay dùng vật phẩm được.
 - **Mobile**: nhắc xoay ngang, bỏ nút phanh, HUD gọn hơn, nút bấm cỡ ngón tay. Có vạch sóng mạng trên HUD; mạng yếu thì gửi/nhận thưa hơn.
 
+## Kiểm tra đang chạy bản nào
+
+Góc dưới trái màn hình game có số bản (ví dụ `v16-3fa9c1`), dòng khởi động của server và `/api/version` cũng in ra số đó.
+Nếu số trên điện thoại khác số trong cửa sổ server thì điện thoại đang giữ bản cũ: đóng tab rồi mở lại link.
+Khi sửa game, tăng `VERSION` trong `server.js`.
+
 ## Công bằng & chống gian lận
 
 - Trình duyệt **chỉ gửi nút bấm** (trái/phải/drift/phanh/nitro, 60 lần/giây). Server tự lái lại chiếc xe bằng đúng bộ vật lý
