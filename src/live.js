@@ -81,7 +81,7 @@ function onMessage(m) {
     case 'start': startRace(m); break;
     case 'S': { const nowT = performance.now(); for (const s of m.ps) { const c = cars.get(s[0]); if (!c) continue; const el = (nowT - (c.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { c.vx = (s[1] - c.sx) / el; c.vz = (s[2] - c.sz) / el; } c.sx = c.tx = s[1]; c.sz = c.tz = s[2]; c.at = nowT; c.th = s[3]; c.p = s[4]; c.flags = s[5]; } break; }
     case 'done': { const c = cars.get(m.id); if (c && race) { c.place = m.place; c.time = m.time; } break; }
-    case 'box': items.takeBox(m.i, m.ms); break;
+    case 'box': items.takeBox(m.i, m.ms, m.bomb); break;
     case 'ban': if (m.add) items.addBanana(m.add[0], m.add[1], m.add[2]); else items.delBanana(m.del); break;
     case 'end': if (race) { $('endList').innerHTML = m.results.map((r, i) => `<li><span class="n">${r.time != null ? i + 1 : '–'}</span><i style="background:${esc(teamColor[r.team] || '#888')}"></i><span class="nm">${esc(r.name)}</span><span class="tm">${r.time != null ? fmtTime(r.time) : 'DNF'}</span></li>`).join(''); race.ended = true; $('sEnd').classList.remove('hidden'); } break;
     case 'gone': if (roomCode && !(race && race.ended)) openRooms(); break; // after a finish, keep the results up until the commentator moves on
@@ -118,7 +118,7 @@ gl.addEventListener('dblclick', () => { yaw = pitch = 0; zoom = 1; });
 // ---------------------------------------------------------------- loop
 const clock = new THREE.Clock(), look = new THREE.Vector3(), want = new THREE.Vector3(), focus = new THREE.Vector3();
 const wrap = a => { a = (a + Math.PI) % (Math.PI * 2); return a < 0 ? a + Math.PI : a - Math.PI; };
-let camH = 0, tick = 0;
+let camH = 0, tick = 0; const ST = { spin: -1, air: -1 };
 let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
 for (const s of track.samples) { minX = Math.min(minX, s.x); maxX = Math.max(maxX, s.x); minZ = Math.min(minZ, s.z); maxZ = Math.max(maxZ, s.z); }
 function frame() {
@@ -131,7 +131,9 @@ function frame() {
       c.x += (c.tx - c.x) * k; c.z += (c.tz - c.z) * k; c.h += wrap(c.th - c.h) * k;
       const sp = Math.hypot(c.x - c.px, c.z - c.pz) / Math.max(dt, 1e-3); c.px = c.x; c.pz = c.z;
       c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.h;
-      c.mesh.userData.animate(sp, 0, c.flags & 1 ? 1 : 0, !!(c.flags & 2), dt, t);
+      c.spinPh = c.flags & 16 ? Math.min(1, (c.spinPh || 0) + dt / 2) : 0; c.airPh = c.flags & 32 ? Math.min(1, (c.airPh || 0) + dt / 2) : 0;
+      ST.spin = c.flags & 16 ? c.spinPh : -1; ST.air = c.flags & 32 ? c.airPh : -1;
+      c.mesh.userData.animate(sp, 0, c.flags & 1 ? 1 : 0, !!(c.flags & 2), dt, t, 0, ST);
     }
     const toStart = race.startAt - now, n = Math.ceil(toStart / 1000);
     if (toStart > 0) { if (n !== race.last && n <= 3) { race.last = n; $('big').textContent = n; } }

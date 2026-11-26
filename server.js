@@ -273,8 +273,15 @@ function startRace(room) {
     const h = sim.gridPlace(track, p.slot).heading;
     p.car = sim.createCar(track, p.slot, h); p.car.evq = []; p.finished = false; p.item = null; grid[p.id] = h;
   }
-  room.boxAt = track.itemBoxes.map(() => 0); room.bananas.clear();
-  broadcast(room, { ...roomInfo(room), t: 'start', countdown: COUNT, laps: config.laps, grid, race: room.raceId });
+  // Each row of lucky boxes is laid out at random for this race: one box in the middle, or two at the sides.
+  room.boxAt = track.itemBoxes.map(() => Infinity); room.bananas.clear();
+  for (let i = 0; i < track.itemBoxes.length;) {
+    let j = i; while (j < track.itemBoxes.length && track.itemBoxes[j].idx === track.itemBoxes[i].idx) j++;
+    if (j - i >= 3 && Math.random() < 0.5) room.boxAt[i + 1] = 0; else { room.boxAt[i] = 0; room.boxAt[j - 1] = 0; }
+    i = j;
+  }
+  const boxMs = room.boxAt.map(at => at === Infinity ? -1 : 0);
+  broadcast(room, { ...roomInfo(room), t: 'start', countdown: COUNT, laps: config.laps, grid, race: room.raceId, boxes: boxMs });
   room.timers.push(setTimeout(() => { room.state = 'racing'; }, COUNT));
   room.timers.push(setTimeout(() => endRace(room), COUNT + 6 * 60000)); // hard cap
 }
@@ -345,14 +352,19 @@ function touchItems(pl, room, car) {
     if ((car.x - bx.x) * (car.x - bx.x) + (car.z - bx.z) * (car.z - bx.z) > 3.2 * 3.2) continue;
     room.boxAt[i] = now + (config.boxRespawnMs || 3000);
     const r = Math.random();
-    pl.item = r < 0.4 ? { kind: 'banana', n: 2 } : r < 0.7 ? { kind: 'magnet', n: 1 } : { kind: 'nitro', n: 1 };
-    sendItem(pl);
-    broadcast(room, { t: 'box', i, ms: config.boxRespawnMs || 3000, by: pl.id });
+    if (r < 0.2) { // unlucky: the box was a bomb
+      pushEvent(pl, sim.FX.BOMB);
+      broadcast(room, { t: 'box', i, ms: config.boxRespawnMs || 3000, by: pl.id, bomb: 1 });
+    } else {
+      pl.item = r < 0.5 ? { kind: 'banana', n: 2 } : r < 0.75 ? { kind: 'magnet', n: 1 } : { kind: 'nitro', n: 1 };
+      sendItem(pl);
+      broadcast(room, { t: 'box', i, ms: config.boxRespawnMs || 3000, by: pl.id });
+    }
     break;
   }
   for (const [id, bn] of room.bananas) {
     if ((car.x - bn.x) * (car.x - bn.x) + (car.z - bn.z) * (car.z - bn.z) > 2.1 * 2.1) continue;
-    if (bn.owner === pl.id && now - bn.at < 1500) continue; // don't slip on the one you just dropped
+    if (bn.owner === pl.id && now - bn.at < 500) continue; // the dropper can slip on it too, just not in the instant it leaves the kart
     room.bananas.delete(id);
     pushEvent(pl, sim.FX.BANANA);
     broadcast(room, { t: 'ban', del: id, hit: pl.id });
@@ -444,7 +456,7 @@ wss.on('connection', ws => {
           const grid = {}; for (const p of room.players) grid[p.id] = sim.gridPlace(track, p.slot).heading;
           const now = Date.now();
           send(ws, { ...roomInfo(room), t: 'start', countdown: Math.max(0, room.startAt - now), laps: config.laps, grid, race: room.raceId,
-            boxes: room.boxAt.map(at => Math.max(0, at - now)), bananas: [...room.bananas].map(([id, bn]) => [id, bn.x, bn.z]), done: room.results.map(r => [r.id, r.time]), elapsed: Math.max(0, now - room.startAt) });
+            boxes: room.boxAt.map(at => at === Infinity ? -1 : Math.max(0, at - now)), bananas: [...room.bananas].map(([id, bn]) => [id, bn.x, bn.z]), done: room.results.map(r => [r.id, r.time]), elapsed: Math.max(0, now - room.startAt) });
         }
       }
       return;
@@ -506,7 +518,7 @@ setInterval(() => {
     const ps = [];
     for (const p of room.players) {
       const c = p.car; if (!c) continue;
-      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / track.N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0) | (c.slowT > 0 ? 4 : 0) | (p.finished ? 8 : 0)]);
+      ps.push([p.id, Math.round(c.x * 100) / 100, Math.round(c.z * 100) / 100, Math.round(c.h * 1000) / 1000, Math.round(c.prog / track.N * 10000) / 10000, (c.drift ? 1 : 0) | (c.boostT > 0 ? 2 : 0) | (c.slowT > 0 ? 4 : 0) | (p.finished ? 8 : 0) | (c.spinT > 0 ? 16 : 0) | (c.airT > 0 ? 32 : 0)]);
     }
     if (!ps.length) continue;
     const s = JSON.stringify({ t: 'S', ps });

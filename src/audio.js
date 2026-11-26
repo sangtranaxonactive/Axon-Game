@@ -81,6 +81,14 @@ export const audio = {
     og.gain.setValueAtTime(0.09, t); og.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(og).connect(this.sfx); o.start(t); o.stop(t + dur);
   },
+  boom(power = 1) { // explosion: low thump + noise burst
+    if (!this.ok) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.45);
+    g.gain.setValueAtTime(0.5 * power, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.55); o.connect(g).connect(this.sfx); o.start(t); o.stop(t + 0.6);
+    const n = ctx.createBufferSource(); n.buffer = this.noise; const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(3200, t); f.frequency.exponentialRampToValueAtTime(240, t + 0.5);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.45 * power, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.6); n.connect(f).connect(ng).connect(this.sfx); n.start(t); n.stop(t + 0.62);
+  },
   ready() { [784, 1046, 1568].forEach((f, i) => setTimeout(() => this.beep(f, 0.16, 0.1, 'triangle'), i * 70)); },
 
   // ---------------------------------------------------------------- music

@@ -156,11 +156,16 @@ export function makeCar(color, name, look = {}) {
   root.add(blob);
   root.userData = {
     // speed m/s, steer -1..1, drift level 0..2, boosting bool, t seconds
-    animate(speed, steer, driftLevel, boosting, dt, t, slide = 0) {
+    // stunt: { spin, air } progress 0..1 while spinning on a banana / flying from a bomb, -1 otherwise
+    animate(speed, steer, driftLevel, boosting, dt, t, slide = 0, stunt = null) {
       for (const w of wheels) w.rotation.x += speed / 0.36 * dt;
       for (const p of front) p.rotation.y = -steer * 0.45;
       inner.rotation.z = THREE.MathUtils.lerp(inner.rotation.z, steer * 0.07 * Math.min(1, speed / 20), 0.2);
-      inner.rotation.y = THREE.MathUtils.lerp(inner.rotation.y, slide, 0.2);
+      const spin = stunt && stunt.spin >= 0 ? stunt.spin : -1, air = stunt && stunt.air >= 0 ? stunt.air : -1;
+      if (spin >= 0) inner.rotation.y = (1 - (1 - spin) * (1 - spin)) * Math.PI * 6;            // three turns, slowing down
+      else inner.rotation.y = THREE.MathUtils.lerp(inner.rotation.y % (Math.PI * 2) > Math.PI ? 0 : inner.rotation.y % (Math.PI * 2), slide, 0.2);
+      inner.position.y = air >= 0 ? Math.sin(Math.PI * air) * 7 : 0;                             // up and back down
+      inner.rotation.x = air >= 0 ? -air * Math.PI * 4 : 0;                                      // two flips
       head.rotation.z = -steer * 0.22 + Math.sin(t * 9) * 0.03 * Math.min(1, speed / 10); head.rotation.x = Math.sin(t * 13) * 0.025;
       for (const f of flames) { f.visible = boosting; if (boosting) f.scale.set(1, 1, 0.8 + Math.sin(t * 60 + f.position.x * 9) * 0.25); }
       for (const s of sparks) {

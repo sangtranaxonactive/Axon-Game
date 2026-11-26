@@ -30,7 +30,7 @@ export class Predictor {
     Object.assign(c, this.snap[k % H]);
     c.ev = 0;
     while (c.tick < now) this._tick(this.bits[c.tick % H]);
-    const probe = { finishMs: null, ev: 0, vx: 0, vz: 0, slowT: 0, boostT: 0 }; applyEvent(probe, code);
+    const probe = { finishMs: null, ev: 0, vx: 0, vz: 0, slowT: 0, boostT: 0, spinT: 0, airT: 0 }; applyEvent(probe, code);
     c.ev = pendingEv | probe.ev; // only announce the new effect, not everything that replayed
     return true;
   }

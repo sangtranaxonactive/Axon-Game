@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildTrack, fmtTime } from './track-core.js';
-import { createCar, gridPlace, padIndices, IN, EV, TICK_MS } from './physics.js';
+import { createCar, gridPlace, padIndices, IN, EV, TICK_MS, STUN_TICKS } from './physics.js';
+const ST = { spin: -1, air: -1 };
 import { buildWorld } from './world.js';
 import { makeCar } from './car.js';
 import { audio } from './audio.js';
@@ -238,7 +239,7 @@ function onMessage(m) {
     case 'S': if (race) { const nowT = performance.now(); for (const s of m.ps) { const r = race.remotes.get(s[0]); if (!r) continue; const el = (nowT - (r.at || nowT)) / 1000; if (el > 0.02 && el < 0.8) { r.vx = (s[1] - r.sx) / el; r.vz = (s[2] - r.sz) / el; } r.sx = r.tx = s[1]; r.sz = r.tz = s[2]; r.at = nowT; r.th = s[3]; r.p = s[4]; r.flags = s[5]; } } break;
     case 'ev': if (race && m.r === race.id) race.pred.onEvent(m.k, m.c); break;
     case 'item': if (m.kind && (m.kind !== myItem || m.n > myCount)) { flash(ITEM_NAME[m.kind] + (isTouch ? '' : ' — press E'), 1100, 'xs'); audio.ready(); } setItem(m.kind, m.n); break;
-    case 'box': items.takeBox(m.i, m.ms); break;
+    case 'box': items.takeBox(m.i, m.ms, m.bomb); if (m.bomb) audio.boom(m.by === me.id ? 1 : 0.4); break;
     case 'ban': if (m.add) items.addBanana(m.add[0], m.add[1], m.add[2]); else items.delBanana(m.del); break;
     case 'fx': if (race && m.k === 'magnet' && m.from === me.id) flash('MAGNET!', 700, 'xs'); break;
     case 'p': netq.onPong(m.c); break;
@@ -355,7 +356,7 @@ function startRace(m) {
     scene.add(rm);
     remotes.set(p.id, { mesh: rm, sx: rg.x, sz: rg.z, vx: 0, vz: 0, at: 0, x: rg.x, z: rg.z, h: rh, tx: rg.x, tz: rg.z, th: rh, p: rg.lapIdx / N, flags: 0, px: rg.x, pz: rg.z, name: p.name, team: p.team });
   }
-  items.reset(); setItem(null, 0);
+  items.reset(m.boxes); setItem(null, 0);
   race = { id: m.race, over: false, pred: new Predictor(track, pads, car, m.laps), car, mesh, remotes, startAt: performance.now() + m.countdown, laps: m.laps, finished: false, lastCount: 5, camH: car.h, time: 0,
     acc: 0, last: 0, queue: [], sent: 0, prev: { x: car.x, z: car.z, h: car.h }, myResult: null };
   $('hPosOf').textContent = '/' + m.players.length;
@@ -416,6 +417,7 @@ function simulate(now) {
     if (e & EV.WALL) audio.beep(90, 0.12, 0.1);
     if (e & EV.PAD) audio.beep(740, 0.18);
     if (e & EV.SLOW) { flash('SLOWED!', 700, 'xs'); audio.beep(130, 0.3, 0.12, 'sawtooth'); }
+    if (e & EV.BOMB) flash('BOOM!', 900, 'xs');
     if (e & EV.HIT) { flash('BANANA!', 700, 'xs'); audio.beep(300, 0.12, 0.12); setTimeout(() => audio.beep(180, 0.25, 0.12), 110); }
     if (e & EV.PULL) { audio.boost(0.45); kickFx(); }
     if ((e & EV.LAP) && c.finishMs === null) { flash(c.lap === race.laps - 1 ? 'FINAL LAP!' : `LAP ${c.lap + 1}`, 1400, true); audio.beep(660, 0.2); }
@@ -500,7 +502,8 @@ function frame() {
     race.mesh.position.set(rxp, c.y, rzp);
     race.mesh.rotation.y = rhp;
     const lvl = c.drift ? (c.charge >= 1.7 ? 2 : c.charge >= 0.75 ? 1 : 0.5) : 0;
-    race.mesh.userData.animate(c.vf, c.steer, lvl >= 1 ? lvl : 0, c.boostT > 0, dt, t, c.drift * -0.22);
+    ST.spin = c.spinT > 0 ? 1 - c.spinT / STUN_TICKS : -1; ST.air = c.airT > 0 ? 1 - c.airT / STUN_TICKS : -1;
+    race.mesh.userData.animate(c.vf, c.steer, lvl >= 1 ? lvl : 0, c.boostT > 0, dt, t, c.drift * -0.22, ST);
     if (c.drift && started) skid.wheels('me', rxp, c.y, rzp, rhp); else skid.lift('me');
     audio.setScreech(c.drift ? Math.min(1, Math.abs(c.vf) / 28) : c.wall > 0.2 ? 0.35 : 0);
     setC(fxEl, 'boost', c.boostT > 0); setC(fxEl, 'slow', c.slowT > 0);
@@ -517,7 +520,9 @@ function frame() {
       const ri = ((Math.round(r.p * N) % N) + N) % N;
       r.mesh.position.set(r.x, track.samples[ri].y, r.z);
       r.mesh.rotation.y = r.h;
-      r.mesh.userData.animate(sp, 0, r.flags & 1 ? 1 : 0, !!(r.flags & 2), dt, t);
+      r.spinPh = r.flags & 16 ? Math.min(1, (r.spinPh || 0) + dt / 2) : 0; r.airPh = r.flags & 32 ? Math.min(1, (r.airPh || 0) + dt / 2) : 0;
+      ST.spin = r.flags & 16 ? r.spinPh : -1; ST.air = r.flags & 32 ? r.airPh : -1;
+      r.mesh.userData.animate(sp, 0, r.flags & 1 ? 1 : 0, !!(r.flags & 2), dt, t, 0, ST);
       if (r.flags & 1) skid.wheels(r.name + r.team, r.x, track.samples[ri].y, r.z, r.h); else skid.lift(r.name + r.team);
       if (race.finished ? (r.done && r.place < (race.myResult ? race.myResult.place : 99)) : (r.done || r.p > myP)) ahead++;
     }

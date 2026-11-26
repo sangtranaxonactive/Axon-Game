@@ -7,9 +7,10 @@ export const TICK_MS = 1000 / 60;
 const DT = 1 / 60;
 export const V_MAX = 35, V_BOOST = 47;
 export const IN = { LEFT: 1, RIGHT: 2, DRIFT: 4, BRAKE: 8, NITRO: 16 };
-export const EV = { WINDOW: 1, TAP: 2, STOCK: 4, NITRO: 8, WALL: 16, PAD: 32, LAP: 64, FINISH: 128, SHORTCUT: 256, SLOW: 512, HIT: 1024, PULL: 2048 };
+export const EV = { WINDOW: 1, TAP: 2, STOCK: 4, NITRO: 8, WALL: 16, PAD: 32, LAP: 64, FINISH: 128, SHORTCUT: 256, SLOW: 512, HIT: 1024, PULL: 2048, BOMB: 4096 };
 // Effects the server injects into a kart at an agreed tick (items). Both sides apply them with applyEvent().
-export const FX = { NITRO: 1, BANANA: 2, MAGNET: 3, PULL: 4 };
+export const FX = { NITRO: 1, BANANA: 2, MAGNET: 3, PULL: 4, BOMB: 5 };
+export const STUN_TICKS = 120; // banana spin-out / bomb launch: two seconds with no control
 export const SLOW_STRIP_TICKS = 120, V_SLOW = 16;
 export const START_WINDOW = 36, DRIFT_WINDOW = 60; // ticks during which a well-timed NITRO tap gives a free mini boost
 
@@ -46,21 +47,27 @@ export function createCar(track, slot, heading) {
     x: g.x, z: g.z, y: 0, h: heading, vx: 0, vz: 0, idx: g.idx, lapIdx: g.lapIdx, prog: g.lapIdx, prevProg: g.lapIdx,
     steer: 0, drift: 0, charge: 0, gauge: 0, stock: 0, boostT: 0, wall: 0, vf: 0, wrong: false,
     lap: 0, tick: 0, finishMs: null, ev: 0,
-    tapWin: START_WINDOW, tapPow: 0.4, sc: -1, scBase: 0, scCool: 0, slowT: 0,
+    tapWin: START_WINDOW, tapPow: 0.4, sc: -1, scBase: 0, scCool: 0, slowT: 0, spinT: 0, airT: 0,
   };
 }
 
 export function applyEvent(c, code) {
   if (c.finishMs !== null) return;
   if (code === FX.NITRO) { c.boostT = 2.6; c.ev |= EV.NITRO; }
-  else if (code === FX.BANANA) { c.vx *= 0.3; c.vz *= 0.3; if (c.slowT < 80) c.slowT = 80; c.drift = 0; c.charge = 0; c.boostT = 0; c.ev |= EV.HIT; }
+  else if (code === FX.BANANA) { c.spinT = STUN_TICKS; c.airT = 0; c.drift = 0; c.charge = 0; c.boostT = 0; c.ev |= EV.HIT; }
+  else if (code === FX.BOMB) { c.airT = STUN_TICKS; c.spinT = 0; c.vx *= 0.55; c.vz *= 0.55; c.drift = 0; c.charge = 0; c.boostT = 0; c.ev |= EV.BOMB; }
   else if (code === FX.MAGNET) { if (c.slowT < 180) c.slowT = 180; c.boostT = 0; c.ev |= EV.SLOW; }
   else if (code === FX.PULL) { if (c.boostT < 0.9) c.boostT = 0.9; c.ev |= EV.PULL; }
 }
 
 export function stepCar(track, pads, c, bits, laps) {
   const N = track.N, samples = track.samples;
-  const active = c.finishMs === null;
+  const racing = c.finishMs === null;
+  // spinning on a banana or flying from a bomb: the kart coasts and ignores the buttons until it recovers
+  const stunned = c.spinT > 0 || c.airT > 0;
+  if (c.spinT > 0) c.spinT--;
+  if (c.airT > 0) c.airT--;
+  const active = racing && !stunned;
   const target = active ? ((bits & IN.RIGHT) ? 1 : 0) - ((bits & IN.LEFT) ? 1 : 0) : 0;
   // steering follows the buttons quickly; flipping left<->right is the fastest so the kart never 'keeps turning the old way'
   c.steer += (target - c.steer) * (target === 0 ? 0.25 : target * c.steer < 0 ? 0.45 : 0.2);
@@ -207,7 +214,7 @@ export function stepCar(track, pads, c, bits, laps) {
   }
 
   // continuous progress along the road -> laps and a sub-tick finish time
-  if (active) {
+  if (racing) {
     const lap = Math.floor(c.prog / N);
     if (lap > c.lap) {
       c.lap = lap; c.ev |= EV.LAP;
