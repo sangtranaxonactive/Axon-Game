@@ -46,7 +46,8 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.38, 0.5, 0.96);
 composer.addPass(bloom); composer.addPass(new OutputPass());
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const vv = window.visualViewport, w = Math.round(vv ? vv.width : innerWidth), h = Math.round(vv ? vv.height : innerHeight);
+  document.documentElement.style.setProperty('--vh', h + 'px');
   renderer.setSize(w, h, false);
   composer.setPixelRatio(pixelRatio); composer.setSize(w, h);
   camera.aspect = w / h;
@@ -72,7 +73,7 @@ if (!teamColor[me.team]) me.team = '';
 
 // ------------------------------------------------------------------ UI helpers
 let previewRef = null;
-const screens = ['sProfile', 'sHome', 'sLobby', 'sResult', 'sBoard', 'sGarage'];
+const screens = ['sProfile', 'sHome', 'sLobby', 'sResult', 'sBoard', 'sGarage', 'sFull'];
 let current = null, boardReturn = 'sHome';
 function show(id) {
   current = id;
@@ -618,4 +619,27 @@ frame();
 if (cfg.testHooks) window.__game = { get race() { return race; }, inp, track, me }; // automated tests only (server started with TEST_HOOKS=1)
 
 if (!isTouch) document.body.classList.add('kbd');
+// ---- full screen. Android / desktop / iPad: the Fullscreen API (plus a landscape lock where allowed).
+// iPhone Safari has no such API for pages, so there we explain "Add to Home Screen", which runs the game without browser bars.
+const fsRoot = document.documentElement;
+const fsApi = fsRoot.requestFullscreen ? ['requestFullscreen', 'exitFullscreen', 'fullscreenElement', 'fullscreenchange']
+  : fsRoot.webkitRequestFullscreen ? ['webkitRequestFullscreen', 'webkitExitFullscreen', 'webkitFullscreenElement', 'webkitfullscreenchange'] : null;
+const standalone = navigator.standalone === true || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+let fullReturn = 'sHome';
+async function toggleFull() {
+  if (!fsApi) { // iPhone Safari
+    if (race) toast('Full screen on iPhone: Share → Add to Home Screen, then open the game from there', 6000);
+    else { fullReturn = current || 'sHome'; show('sFull'); }
+    return;
+  }
+  try {
+    if (document[fsApi[2]]) { try { screen.orientation.unlock(); } catch { /* not locked */ } await document[fsApi[1]](); }
+    else { await fsRoot[fsApi[0]]({ navigationUI: 'hide' }); try { await screen.orientation.lock('landscape'); } catch { /* not supported here */ } }
+  } catch { toast('Full screen is not available in this browser'); }
+}
+if (fsApi) document.addEventListener(fsApi[3], () => { const on = !!document[fsApi[2]]; document.body.classList.toggle('is-full', on); $('btnFullHome').textContent = on ? '⛶ EXIT FULL SCREEN' : '⛶ FULL SCREEN'; setTimeout(resize, 150); });
+if (standalone) document.body.classList.add('standalone'); // already full screen: no button needed
+$('btnFull').onclick = $('btnFullHome').onclick = toggleFull;
+$('btnFullClose').onclick = () => show(fullReturn);
+if (window.visualViewport) visualViewport.addEventListener('resize', () => setTimeout(resize, 60)); // Safari bars sliding in and out
 $('btnPortrait').onclick = () => document.body.classList.add('allow-portrait');

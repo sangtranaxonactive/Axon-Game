@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#03101f">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="YEP Racing">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>YEP Racing</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%2306203f%22/%3E%3Cpath d=%22M40 6 14 37h13l-6 25 29-33H36z%22 fill=%22%2335c8f5%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/css/game.css">
@@ -58,6 +62,7 @@
   <div id="hWrong" class="hidden">⟲ WRONG WAY</div>
   <button id="btnQuit" class="mini-btn">✕</button>
   <button id="btnMute" class="mini-btn">♪</button>
+  <button id="btnFull" class="mini-btn" aria-label="Full screen"><svg viewBox="0 0 24 24" width="14" height="14"><path class="in" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path class="out" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <div id="hNet" data-q="3" aria-label="Connection quality"><i></i><i></i><i></i></div>
   <div id="keys"><kbd>←</kbd><kbd>→</kbd> steer <kbd>Shift</kbd> drift <kbd>N</kbd> nitro <kbd>E</kbd> use item</div>
 
@@ -95,6 +100,7 @@
       <button id="btnCreate" class="btn">CREATE ROOM</button>
       <div class="join"><input id="inCode" inputmode="numeric" maxlength="4" placeholder="Code"><button id="btnJoin" class="btn">JOIN</button></div>
     </div>
+    <button id="btnFullHome" class="btn ghost">⛶ FULL SCREEN</button>
     <button id="btnGarage" class="btn ghost"><svg class="ic" viewBox="0 0 64 64"><use href="#i-helmet"/></svg>GARAGE · DRIVER &amp; COLOURS</button>
     <button id="btnBoard" class="btn ghost"><svg class="ic" viewBox="0 0 64 64"><use href="#i-cup"/></svg>LEADERBOARD</button>
     <p class="hint">Dodge the red SLOW strips · grab orange boxes for items · hold DRIFT in corners to fill nitro</p>
@@ -124,6 +130,18 @@
     <label>Kart colour</label><div id="gKartCol" class="swatches"></div>
     <p class="sub">Looks only — every kart has the same speed and handling.</p>
     <button id="btnGarageDone" class="btn primary">DONE</button>
+  </section>
+
+  <section id="sFull" class="panel hidden">
+    <h2>FULL SCREEN ON IPHONE</h2>
+    <p class="sub">Safari on iPhone does not let a web page hide its tabs. Add the game to your home screen once and it opens full screen every time:</p>
+    <ol class="steps">
+      <li>Tap the <b>Share</b> button in Safari <svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:-3px"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v9h14v-9h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></li>
+      <li>Choose <b>Add to Home Screen</b>, then <b>Add</b></li>
+      <li>Open <b>YEP Racing</b> from your home screen and turn the phone sideways</li>
+    </ol>
+    <p class="sub">To leave full screen, swipe up to go home like any other app.</p>
+    <button id="btnFullClose" class="btn primary">GOT IT</button>
   </section>
 
   <section id="sBoard" class="panel hidden">

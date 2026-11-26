@@ -275,3 +275,17 @@ body.kbd #keys { display: block; } body.kbd .item-btn kbd { display: block; }
   .nitro-btn.ready, .nitro-btn.tap, .item-btn { opacity: 1; }
   #fx.boost .lines { opacity: .32; }
 }
+
+/* ---------- update 14: full screen + fit the visible area exactly (Safari bars) ---------- */
+html, body { height: var(--vh, 100dvh); }
+#gl, #hud, #ui, #fx, #rotate { height: var(--vh, 100dvh); bottom: auto; }
+#btnFull { left: calc(var(--pad) + 72px); display: grid; place-items: center; padding: 0; } #btnFull .out { display: none; }
+body.is-full #btnFull .in { display: none; } body.is-full #btnFull .out { display: block; }
+#hNet { left: calc(var(--pad) + 112px); }
+body.standalone #btnFull, body.standalone #btnFullHome { display: none; }
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; line-height: 1.4; }
+@media (orientation: landscape) {
+  #btnFull { left: auto; right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 82px); }
+  #hNet { left: auto; right: calc(var(--padr) + clamp(84px, 24vh, 124px) + 118px); }
+}
+@media (orientation: portrait) { #btnFull { top: calc(var(--top) + var(--u) * 17); } }
