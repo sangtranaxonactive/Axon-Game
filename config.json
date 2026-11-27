@@ -52,7 +52,7 @@
   "boxRespawnMs": 3000,
   "maps": [
     "company",
-    "arena",
-    "coast"
+    "company2",
+    "company3"
   ]
 }

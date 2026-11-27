@@ -141,6 +141,7 @@ function renderGarage() {
 }
 const pick = (id, k) => { $(id).onclick = e => { const b = e.target.closest('button'); if (!b) return; me.look[k] = +b.dataset.i; store.set('yep_look', JSON.stringify(me.look)); renderGarage(); preview.build(); audio.beep(880, 0.05, 0.06, 'triangle'); }; };
 pick('gChars', 0); pick('gCharCol', 1); pick('gKartCol', 2);
+$('gTabs').onclick = e => { const b = e.target.closest('button'); if (!b) return; for (const t of $('gTabs').children) { t.classList.toggle('on', t === b); $(t.dataset.g).classList.toggle('hidden', t !== b); } };
 $('btnGarage').onclick = () => { audio.unlock(); renderGarage(); show('sGarage'); };
 $('btnGarageDone').onclick = () => { net.hello(); renderHome(); show('sHome'); };
 $('btnQuick').onclick = () => { audio.unlock(); net.send({ t: 'quick' }); };

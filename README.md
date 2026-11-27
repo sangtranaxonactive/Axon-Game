@@ -72,11 +72,18 @@ Thêm đường tắt cho map khác: `node tools/suggest-shortcuts.mjs <map>` g�
 
 ## Nhiều map (bản 17)
 
-- `"maps"` trong `config.json` liệt kê các map đang dùng (mặc định `company`, `arena`, `coast`). "Race now" luân phiên qua các map; trong phòng riêng, chủ phòng bấm **CHANGE** để chọn.
+- `"maps"` trong `config.json` liệt kê các map đang dùng (mặc định `company`, `company2`, `company3`). "Race now" luân phiên qua các map; trong phòng riêng, chủ phòng bấm **CHANGE** để chọn.
 - Mỗi map có **bảng xếp hạng riêng** (cá nhân và đội). Màn hình lớn tự luân phiên 14 giây một map; `/screen?map=coast` để ghim một map, `?rotate=20` để đổi chu kỳ.
-- `arena` (Night Circuit, 1496 m): đường đêm nhanh, cua rộng. `coast` (Sunset Coast, 1696 m): đảo cát lúc hoàng hôn, có đoạn **cầu vượt dốc lên xuống**.
+- Ba map mặc định đều là **văn phòng Axon Active**, chỉ khác đường chạy: `company` (HQ Classic, 1843 m), `company2` (HQ Sprint, 1496 m, nhanh và cua rộng), `company3` (HQ Grand Tour, 1696 m). Đồ vật trong văn phòng tự sắp lại quanh từng đường.
+- Hai cảnh khác vẫn có sẵn nếu cần: `arena` (đường đêm) và `coast` (đảo biển, có cầu vượt); thêm tên vào `"maps"` để bật.
 - Thêm map: tạo `public/maps/<tên>.json` (điểm đường có thể là `[x, y, z]` để có độ cao), chạy `node tools/checkmap.mjs <tên>`, rồi thêm tên vào `"maps"`.
 - Chỉ muốn một map cho ngày tiệc: để `"maps": ["company"]`.
+
+## Mobile first (bản 18)
+
+Mọi màn hình được thiết kế cho điện thoại trước: nút tối thiểu 44 px, chữ tối thiểu 12 px, ô nhập 16 px (để iOS không tự phóng to),
+và ở điện thoại cầm ngang các màn hình dùng bố cục hai cột để không phải cuộn. Sau khi sửa giao diện, chạy `node tools/uiaudit.js`
+(server chạy bằng `npm run dev`): nó mở mọi màn hình ở 3 cỡ điện thoại và báo chỗ tràn, đè nhau, nút/chữ quá nhỏ; phải ra `ALL SCREENS OK`.
 
 ## Kiểm tra đang chạy bản nào
 

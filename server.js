@@ -33,7 +33,7 @@ config.maps = config.maps.map(m => String(m).replace(/[^\w-]/g, '')).filter(Bool
 config.map = config.maps[0];
 const stages = {}; // map id -> { id, name, track, pads }   (filled at start-up)
 const teamIds = new Set(config.teams.map(t => t.id));
-const VERSION = 17; // shown on the home screen so everyone can tell which build they are playing
+const VERSION = 18; // shown on the home screen so everyone can tell which build they are playing
 let BUILD = 'v' + VERSION;
 const publicConfig = () => ({
   build: BUILD,
